@@ -43,7 +43,7 @@ gamma1_b: float         = 1.58
 gamma2_b: float         = 2.73
 xi2_b: float            = 1.49
 
-sig_LbH: float          = 1
-sig_g1: float           = 1
-sig_g2: float           = 1
-sig_xi2: float          = 1
+sig_LbH: float          = (57+34)/2
+sig_g1: float           = 0.02
+sig_g2: float           = (1.58+0.54)/2
+sig_xi2: float          = 0.07
