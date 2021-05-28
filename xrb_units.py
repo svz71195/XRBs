@@ -47,3 +47,22 @@ sig_LbH: float          = (57+34)/2
 sig_g1: float           = 0.02
 sig_g2: float           = (1.58+0.54)/2
 sig_xi2: float          = 0.07
+
+
+##--- HMXB constants, Lehmer+21, metallicity ---##
+
+A_h: float              = 1.29
+g1_h: float             = 1.74
+g2_h: float             = 1.16
+g2_logZ: float          = 1.34
+logLb: float            = 38.54
+logLc: float            = 39.98
+logLc_logZ: float       = 0.6
+
+sig_Ah: float           = 0.185
+sig_g1h: float          = 0.04
+sig_g2h: float          = 0.17
+sig_g2logZ: float       = 0.5
+sig_logLb: float        = 0.2
+sig_logLc: float        = 0.24
+sig_logLcZ: float       = 0.3
