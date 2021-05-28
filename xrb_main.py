@@ -1,5 +1,14 @@
+from typing import Callable
 import numpy as np
+from scipy.special import gammaincc, gamma
 import xrb_units as xu
+
+def GammaInc(a,x):
+    if a >= 0.:
+        res = gammaincc(a,x)*gamma(a)
+    else:
+        res = ( GammaInc(a+1,x)-x**(a)*np.exp(-x) ) / a
+    return res
 
 class XRB:
     def __init__(self, nchan: int = 10000, Lmin: float = 34, Lmax: float = 41, Emin: float = 0.05, Emax: float = 50.1) -> None:
@@ -40,7 +49,7 @@ class XRB:
             1       : self.Mineo12B,
             "Le21"  : self.Lehmer21,
             "2"     : self.Lehmer21,
-            2       : self.Lehmer21
+            2       : self.Lehmer21,
         }
 
     def Zhang12(self, bRand: bool = False) -> tuple:
@@ -113,8 +122,13 @@ class XRB:
         returns tuple of parameters for easy pass to other functions
         return (norm1, break1, break2, cut-off, slope1, slope2, slope3)
         -----
+        logOH12     :   metallicity measure, used to scale model parameters
+                        refers to convention '12+log(O/H)'
         bRand       :   boolean switching between randomized parameters\\
-                            according to their uncertainty
+                        according to their uncertainty. Does not randomize 
+                        logOH12 as it is an external scaling parameter
+        -----
+        return (xu.A_h, 10**xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ, logOH12)
         """
         if not bRand:
             return (xu.A_h, 10**xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ)
@@ -248,29 +262,63 @@ class XRB:
         elif (lum_in >= Lb1) and (lum_in < Lcut):
             return xi * Lb1**(gamma2-gamma1)*(lum_in**(1.-gamma2) - Lcut**(1.-gamma2)) / (gamma2-1.)
 
-    def diff_Nhxb_met(self, lum_in: float,
+    def calc_Nhxb_met(self, lum_in: float,
                       A: float, Lb: float, logLc: float, logLc_logZ: float,
                       g1: float, g2: float, g2_logZ: float,
-                      logOH12: float = 8.69 ) -> float:
+                      logOH12: float ) -> float:
         """
-        Differential function dN/dL for metallicity enhanced HMXB LF in Lehmer+21\\
-        Needs to be integated
+        Analytic solution of 'self.diff_Nhxb_met()' for metallicity enhanced HMXB LF in Lehmer+21\\
+        Makes use of a custom implementation of the incomplete upper Gamma function
+        using recursion to solve for negative inputs for 'a'. 
+        See "http://en.wikipedia.org/wiki/Incomplete_gamma_function#Properties"
+
+        NOTE: authors were not clear about normalization A in the Lehmer+21. They refer to Lehmer+19
+        for a non-metallicity model of HMXBs which is normalized to 1e38 erg/s
+        -----
+        lum_in      :   input luminosity in units of 1.e38 erg/s
+        A           :   model normalization at L = 1.e38 erg/s
+        Lb          :   Power-law break luminosity
+        logLc       :   base 10 logarithm of solar reference cut-off luminosity
+        logLc_logZ  :   expansion constant of first derivative of log10(Z) dependent cut-off luminosity
+                        used to calculate LcZ
+        g1          :   Power-law slope of low luminosity regime
+        g2          :   solar Z reference Power-law slope of high luminosity regime
+        g2_logZ     :   expansion constant of first derivative log10(Z) dependent Power-law slope
+        logOH12     :   metallicity measured as 12+log(O/H)
+        -----
+        in function
+        LcZ         :   metallicity dependent cut-off luminosity
+        g2Z         :   metallicity dependent high L slope
+        slope1,2    :   redefined slopes for integration
+        pre1,2      :   prefactor for first/second integration half respectively
+        end         :   upper integration limit ~infinity
         """
-        LcZ = 10**( logLc + logLc_logZ * ( logOH12 - 8.69 ) ) / 1.e38
+
+        LcZ = 10**( logLc + logLc_logZ * ( logOH12 - 8.69 ) - 38 )
+        Lb  = Lb / 1.e38
+
         g2Z = g2 + g2_logZ * ( logOH12 - 8.69 )
-        Lb  = Lb/1.e38
+
+        slope1  = 1.-g1
+        slope2  = 1.-g2Z
+        pre1    = (LcZ**slope1)
+        pre2    = (LcZ**slope2)*Lb**(g2Z-g1) 
+        end     = 10**(self.Lmax-38)
 
         if lum_in < Lb:
-            return A * np.exp(-lum_in/LcZ) * lum_in**(-g1)
+            return( A * ( pre1 * ( GammaInc(slope1,lum_in/LcZ) - GammaInc(slope1,Lb/LcZ) )
+                    + pre2 * ( GammaInc(slope2,Lb/LcZ) - GammaInc(slope2,end/LcZ)) )
+                )
         else:
-            return A * np.exp(-lum_in/LcZ) * lum_in**(-g2Z) * Lb**(g2Z-g1)
+            return A * pre2 * ( GammaInc(slope2,lum_in/LcZ) - GammaInc(slope2,end/LcZ))
 
-    def model_Nhxb(self, case: str = '0', SFR: float = 1., bRand: bool = False ):
+    def model_Nhxb(self, case: str = '0', SFR: float = 1., logOH12: float = 8.69, bRand: bool = False ):
         """
         Vectorization of analytic solutions. Depending on value passed to 'case',\\
             different model parameters can be loaded
         -----
         SFR         :   Rescaling parameter in units of Msun/yr
+        logOH12     :   metallicity 
         bRand       :   boolean switching between randomized parameters\\
                             according to their uncertainty
         case        :   Decides which model to use, by passing KeyWord strings\\
@@ -285,9 +333,11 @@ class XRB:
 
         vec_calc_Nhxb_SPL = np.vectorize(self.calc_Nhxb_SPL)
         vec_calc_Nhxb_BPL = np.vectorize(self.calc_Nhxb_BPL)
+        vec_calc_Nhxb_met = np.vectorize(self.calc_Nhxb_met)
+
 
         try:
-            par: tuple = self.modelsH[case](bRand)
+            par: tuple = self.modelsH[case](bRand=bRand)
 
         except KeyError:
             raise KeyError("Desired model '"+str(case)+"' not implemented! Available models are",
@@ -298,39 +348,15 @@ class XRB:
             Nhx_arr = vec_calc_Nhxb_SPL(self.lumarr/1.e38, *par)
         elif len(par) == 5:
             Nhx_arr = vec_calc_Nhxb_BPL(self.lumarr/1.e38, *par)
+        elif len(par) == 7:
+            par += (logOH12,)
+            Nhx_arr = vec_calc_Nhxb_met(self.lumarr/1.e38, *par)
 
         return Nhx_arr * SFR
 
-def Riemann(func,lim_l,lim_u,n,*arg):
-    #eval = np.linspace(lim_l,lim_u,n)
-    eval = np.logspace(np.log10(lim_l),np.log10(lim_u),n)
-    delta = np.diff(eval)
-    res = func(eval[:n-1]+delta/2,*arg)*delta
-    return np.sum(res)
 
-def Simpson(func,lim_l,lim_u,n,*arg):
-    #eval = np.linspace(lim_l,lim_u,n+1)
-    eval = np.logspace(np.log10(lim_l),np.log10(lim_u),n+1)
-    # dx = (lim_u-lim_l)/n
-    delta = np.diff(eval[::2])
-    f = func(eval,*arg)
-    S = 1./6. * np.sum((f[0:-1:2] + 4*f[1::2] + f[2::2])*delta)
-    return S
 
-def Trapez(func,lim_l,lim_u,n,*arg):
-    # x = np.linspace(lim_l,lim_u,n+1)
-    eval = np.logspace(np.log10(lim_l),np.log10(lim_u),n+1)
-    f = func(eval,*arg)
-    delta = np.diff(eval)
-    T = .5 * np.sum((f[1:]+f[:-1])*delta)
-    return T
 
-def Riemann_log(func,lim_l,lim_u,n):
-    eval = np.logspace(np.log10(lim_l),np.log10(lim_u),n)
-    leval = np.log(eval)
-    delta = np.diff(leval)
-    res = func(eval[:n-1])*delta*eval[:n-1]
-    return np.sum(res)
 
 if __name__ == "__main__":
     # x = XRB()
@@ -343,44 +369,17 @@ if __name__ == "__main__":
     # plt.show()
 
     import time
-    import scipy.integrate as spi
-
+    import helper
+    
     xrb = XRB(Lmin=36)
-    xrb.lumarr = xrb.lumarr/1.e38
-    par = xrb.Lehmer21()
-    vec = np.vectorize(xrb.diff_Nhxb_met)
-    plt.plot(xrb.lumarr,np.vectorize(xrb.diff_Nhxb_met)(xrb.lumarr,*par))
+    OH = [7,7.5,8,8.5,9]
+    # Nhx = xrb.model_Nhxb(2)
+    for oh in OH:
+        plt.plot( np.log10(xrb.lumarr),np.log10(xrb.model_Nhxb(2,logOH12=oh)),label=f'{oh:.1f}' )
+    plt.xlim([36,41])
+    plt.ylim([-2.5,2.5])
+    plt.legend()
     plt.show()
-    x = np.zeros_like(xrb.lumarr)
-    start = time.time()
-    for i,lum in enumerate(xrb.lumarr):
-        x[i] = Riemann(vec,xrb.lumarr[i],xrb.lumarr[-1],4*int(1000/np.sqrt(i+1)),*par)
-    elapsed = time.time()-start
-    print(f'{x[0]}, in {elapsed:.2f} s')
-    y = np.zeros_like(xrb.lumarr)
-    start2 = time.time()
-    for i,lum in enumerate(xrb.lumarr):
-        y[i] = Simpson(vec,xrb.lumarr[i],xrb.lumarr[-1],4*int(1000/np.sqrt(i+1)),*par)
-    elapsed2 = time.time()-start2
-    print(f'{y[0]}, in {elapsed2:.2f} s')
-    z = np.zeros_like(xrb.lumarr)
-    start3 = time.time()
-    for i,lum in enumerate(xrb.lumarr):
-        z[i] = Trapez(vec,xrb.lumarr[i],xrb.lumarr[-1],4*int(1000/np.sqrt(i+1)),*par)
-    elapsed3 = time.time()-start3
-    print(f'{z[0]}, in {elapsed3:.2f} s')
-    a = np.zeros_like(xrb.lumarr)
-    start4 = time.time()
-    for i,lum in enumerate(xrb.lumarr):
-        a[i] = spi.quad(xrb.diff_Nhxb_met,xrb.lumarr[i],xrb.lumarr[-1],args=par)[0]
-    elapsed4 = time.time()-start4
-    print(f'{a[0]}, in {elapsed4:.2f} s')
-    print(np.mean([x[0],y[0],z[0]]))
-    plt.plot(xrb.lumarr,x)
-    plt.plot(xrb.lumarr,y)
-    plt.plot(xrb.lumarr,z)
-    plt.plot(xrb.lumarr,a)
-    xrb2 = XRB()
-    plt.plot(xrb2.lumarr/1.e38,xrb2.model_Nhxb(),c='k',label='True')
-    plt.show()
+    
+    # print(f'{Nhx[2000]}, {Nhx[4000]}, {Nhx[6000]}')
     
