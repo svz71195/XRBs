@@ -4,6 +4,14 @@ from scipy.special import gammaincc, gamma
 import xrb_units as xu
 
 def GammaInc(a,x):
+    """
+    Incomplete upper Gamma function optimized to also work with a < 0
+    (native scipy functions don't allow this) using recursion. 
+    Used for integration of HMXB LF model from Lehmer+21 of the form:
+
+    exp(-x/b) * x**(-a)  >>>> integration >>>>  -b**(1-a)*Gamma(1-a,x/b) + C
+    """
+    
     if a >= 0.:
         res = gammaincc(a,x)*gamma(a)
     else:
