@@ -38,9 +38,9 @@ class XRB:
             "Mi12B" : self.Mineo12B,
             "1"     : self.Mineo12B,
             1       : self.Mineo12B,
-            "Le20"  : self.Lehmer20,
-            "2"     : self.Lehmer20,
-            2       : self.Lehmer20
+            "Le21"  : self.Lehmer21,
+            "2"     : self.Lehmer21,
+            2       : self.Lehmer21
         }
 
     def Zhang12(self, bRand: bool = False) -> tuple:
@@ -107,8 +107,26 @@ class XRB:
                     self.rand(xu.gamma2_b, xu.sig_g2)
                 )
     
-    def Lehmer20(self):
-        pass
+    def Lehmer21(self, bRand: bool = False) -> tuple:
+        """
+        Initializes model parameters for HMXB LFs of Mineo+12 single PL
+        returns tuple of parameters for easy pass to other functions
+        return (norm1, break1, break2, cut-off, slope1, slope2, slope3)
+        -----
+        bRand       :   boolean switching between randomized parameters\\
+                            according to their uncertainty
+        """
+        if not bRand:
+            return (xu.A_h, 10**xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ)
+        else:
+            return (self.rand(xu.A_h, xu.sig_Ah),
+                    10**self.rand(xu.logLb, xu.sig_logLb),
+                    self.rand(xu.logLc,xu.sig_logLc),
+                    self.rand(xu.logLc_logZ,xu.sig_logLcZ),
+                    self.rand(xu.g1_h,xu.sig_g1h),
+                    self.rand(xu.g2_h,xu.sig_g2h),
+                    self.rand(xu.g2_logZ,xu.sig_g2logZ)
+                )
     
     def rand(self, mu, sigma, size=None):
         return np.random.normal(mu,sigma,size)
@@ -230,6 +248,23 @@ class XRB:
         elif (lum_in >= Lb1) and (lum_in < Lcut):
             return xi * Lb1**(gamma2-gamma1)*(lum_in**(1.-gamma2) - Lcut**(1.-gamma2)) / (gamma2-1.)
 
+    def diff_Nhxb_met(self, lum_in: float,
+                      A: float, Lb: float, logLc: float, logLc_logZ: float,
+                      g1: float, g2: float, g2_logZ: float,
+                      logOH12: float = 8.69 ) -> float:
+        """
+        Differential function dN/dL for metallicity enhanced HMXB LF in Lehmer+21\\
+        Needs to be integated
+        """
+        LcZ = 10**( logLc + logLc_logZ * ( logOH12 - 8.69 ) ) / 1.e38
+        g2Z = g2 + g2_logZ * ( logOH12 - 8.69 )
+        Lb  = Lb/1.e38
+
+        if lum_in < Lb:
+            return A * np.exp(-lum_in/LcZ) * lum_in**(-g1)
+        else:
+            return A * np.exp(-lum_in/LcZ) * lum_in**(-g2Z) * Lb**(g2Z-g1)
+
     def model_Nhxb(self, case: str = '0', SFR: float = 1., bRand: bool = False ):
         """
         Vectorization of analytic solutions. Depending on value passed to 'case',\\
@@ -266,12 +301,86 @@ class XRB:
 
         return Nhx_arr * SFR
 
+def Riemann(func,lim_l,lim_u,n,*arg):
+    #eval = np.linspace(lim_l,lim_u,n)
+    eval = np.logspace(np.log10(lim_l),np.log10(lim_u),n)
+    delta = np.diff(eval)
+    res = func(eval[:n-1]+delta/2,*arg)*delta
+    return np.sum(res)
+
+def Simpson(func,lim_l,lim_u,n,*arg):
+    #eval = np.linspace(lim_l,lim_u,n+1)
+    eval = np.logspace(np.log10(lim_l),np.log10(lim_u),n+1)
+    # dx = (lim_u-lim_l)/n
+    delta = np.diff(eval[::2])
+    f = func(eval,*arg)
+    S = 1./6. * np.sum((f[0:-1:2] + 4*f[1::2] + f[2::2])*delta)
+    return S
+
+def Trapez(func,lim_l,lim_u,n,*arg):
+    # x = np.linspace(lim_l,lim_u,n+1)
+    eval = np.logspace(np.log10(lim_l),np.log10(lim_u),n+1)
+    f = func(eval,*arg)
+    delta = np.diff(eval)
+    T = .5 * np.sum((f[1:]+f[:-1])*delta)
+    return T
+
+def Riemann_log(func,lim_l,lim_u,n):
+    eval = np.logspace(np.log10(lim_l),np.log10(lim_u),n)
+    leval = np.log(eval)
+    delta = np.diff(leval)
+    res = func(eval[:n-1])*delta*eval[:n-1]
+    return np.sum(res)
+
 if __name__ == "__main__":
-    x = XRB()
+    # x = XRB()
     import matplotlib.pyplot as plt
-    plt.plot(x.lumarr,x.model_Nhxb(),c='k',label='True')
-    plt.plot(x.lumarr,x.model_Nhxb(0,1,True))
-    plt.plot(x.lumarr,x.model_Nhxb(0,1,True))
-    plt.plot(x.lumarr,x.model_Nhxb(0,1,True))
-    plt.legend()
+    # plt.plot(x.lumarr,x.model_Nhxb(),c='k',label='True')
+    # plt.plot(x.lumarr,x.model_Nhxb(0,1,True))
+    # plt.plot(x.lumarr,x.model_Nhxb(0,1,True))
+    # plt.plot(x.lumarr,x.model_Nhxb(0,1,True))
+    # plt.legend()
+    # plt.show()
+
+    import time
+    import scipy.integrate as spi
+
+    xrb = XRB(Lmin=36)
+    xrb.lumarr = xrb.lumarr/1.e38
+    par = xrb.Lehmer21()
+    vec = np.vectorize(xrb.diff_Nhxb_met)
+    plt.plot(xrb.lumarr,np.vectorize(xrb.diff_Nhxb_met)(xrb.lumarr,*par))
     plt.show()
+    x = np.zeros_like(xrb.lumarr)
+    start = time.time()
+    for i,lum in enumerate(xrb.lumarr):
+        x[i] = Riemann(vec,xrb.lumarr[i],xrb.lumarr[-1],4*int(1000/np.sqrt(i+1)),*par)
+    elapsed = time.time()-start
+    print(f'{x[0]}, in {elapsed:.2f} s')
+    y = np.zeros_like(xrb.lumarr)
+    start2 = time.time()
+    for i,lum in enumerate(xrb.lumarr):
+        y[i] = Simpson(vec,xrb.lumarr[i],xrb.lumarr[-1],4*int(1000/np.sqrt(i+1)),*par)
+    elapsed2 = time.time()-start2
+    print(f'{y[0]}, in {elapsed2:.2f} s')
+    z = np.zeros_like(xrb.lumarr)
+    start3 = time.time()
+    for i,lum in enumerate(xrb.lumarr):
+        z[i] = Trapez(vec,xrb.lumarr[i],xrb.lumarr[-1],4*int(1000/np.sqrt(i+1)),*par)
+    elapsed3 = time.time()-start3
+    print(f'{z[0]}, in {elapsed3:.2f} s')
+    a = np.zeros_like(xrb.lumarr)
+    start4 = time.time()
+    for i,lum in enumerate(xrb.lumarr):
+        a[i] = spi.quad(xrb.diff_Nhxb_met,xrb.lumarr[i],xrb.lumarr[-1],args=par)[0]
+    elapsed4 = time.time()-start4
+    print(f'{a[0]}, in {elapsed4:.2f} s')
+    print(np.mean([x[0],y[0],z[0]]))
+    plt.plot(xrb.lumarr,x)
+    plt.plot(xrb.lumarr,y)
+    plt.plot(xrb.lumarr,z)
+    plt.plot(xrb.lumarr,a)
+    xrb2 = XRB()
+    plt.plot(xrb2.lumarr/1.e38,xrb2.model_Nhxb(),c='k',label='True')
+    plt.show()
+    
