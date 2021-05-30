@@ -57,15 +57,20 @@ class Integrate:
         T = .5 * np.sum((f[1:]+f[:-1])*delta)
         return T
 
-def GammaInc(a,x):
+def GammaIncc(a,x):
     """
-    Calculates upper incomplete Gamma function for input values a < 0 using
-    recursion relation
+    Incomplete upper Gamma function optimized to also work with a < 0
+    (native scipy functions don't allow this) using recursion.
+    See "http://en.wikipedia.org/wiki/Incomplete_gamma_function#Properties"
+    Used for integration of HMXB LF model from Lehmer+21 of the form:
+
+    exp(-x/b) * x**(-a)  >>>> integration >>>>  -b**(1-a)*Gamma(1-a,x/b) + C
     """
+
     if a >= 0.:
         res = gammaincc(a,x)*gamma(a)
     else:
-        res = ( GammaInc(a+1,x)-x**(a)*np.exp(-x) ) / a
+        res = ( GammaIncc(a+1,x)-x**(a)*np.exp(-x) ) / a
     return res
 
 
