@@ -3,10 +3,11 @@ import numpy as np
 from scipy.special import gammaincc, gamma
 import xrb_units as xu
 
-def GammaInc(a,x):
+def GammaIncc(a,x):
     """
     Incomplete upper Gamma function optimized to also work with a < 0
-    (native scipy functions don't allow this) using recursion. 
+    (native scipy functions don't allow this) using recursion.
+    See "http://en.wikipedia.org/wiki/Incomplete_gamma_function#Properties"
     Used for integration of HMXB LF model from Lehmer+21 of the form:
 
     exp(-x/b) * x**(-a)  >>>> integration >>>>  -b**(1-a)*Gamma(1-a,x/b) + C
@@ -15,7 +16,7 @@ def GammaInc(a,x):
     if a >= 0.:
         res = gammaincc(a,x)*gamma(a)
     else:
-        res = ( GammaInc(a+1,x)-x**(a)*np.exp(-x) ) / a
+        res = ( GammaIncc(a+1,x)-x**(a)*np.exp(-x) ) / a
     return res
 
 class XRB:
@@ -27,7 +28,7 @@ class XRB:
         if self.Lmax < self.Lmin:
             raise ValueError("Lmax can't be smaller than Lmin!")
 
-        if ( self.Lmin < 0 ):
+        if self.Lmin < 0:
             raise ValueError("Lmin can't be smaller than 0!")
         
         self.lumarr     = np.logspace(Lmin, Lmax, self.nchan)
@@ -41,119 +42,28 @@ class XRB:
         if self.Emin < 0:
             raise ValueError("Emin can't be smaller than 0!")
 
-        # THIS WORKS !!!
-        self.modelsL = {
-            "Zh12"  : self.Zhang12,
-            "0"     : self.Zhang12,
-            0       : self.Zhang12
-        }
+        # THIS WORKS !!! Sadly, too convoluted. Simpler is to instanciate subclasses of 
+        # XRB with model functions returning the complete model array
+        # 
+        # self.modelsL = {
+        #     "Zh12"  : self.Zhang12,
+        #     "0"     : self.Zhang12,
+        #     0       : self.Zhang12
+        # }
         
-        self.modelsH = {
-            "Mi12S" : self.Mineo12S,
-            "0"     : self.Mineo12S,
-            0       : self.Mineo12S,
-            "Mi12B" : self.Mineo12B,
-            "1"     : self.Mineo12B,
-            1       : self.Mineo12B,
-            "Le21"  : self.Lehmer21,
-            "2"     : self.Lehmer21,
-            2       : self.Lehmer21,
-        }
-
-    def Zhang12(self, bRand: bool = False) -> tuple:
-        """
-        Initializes model parameters for LMXB LFs of Zhang+12
-        returns tuple of parameters for easy pass to other functions
-        return (norm1, break1, break2, cut-off, slope1, slope2, slope3)
-        -----
-        norm1       :   Normalization in units of 1.e11 solar masses
-        Lb1         :   First luminosity break in units of 1e36 erg/s
-        Lb2         :   Second luminosity break in 1e36 erg/s
-        Lcut        :   Luminosity cut-off in 1.e36 erg/s
-        alpha1      :   Power-Law slope up to first break
-        alpha2      :   Power-Law slope from first to second break
-        alpha3      :   Power-Law slope from second break to cut-off
-        bRand       :   boolean switching between randomized parameters\\
-                            according to their uncertainty
-        """
-        if not bRand:
-            return (xu.norm1, xu.Lb1, xu.Lb2, xu.Lcut_L, xu.alpha1, xu.alpha2, xu.alpha3)
-        else:
-            return (self.rand(xu.norm1,xu.sig_K1),
-                    self.rand(xu.Lb1,xu.sig_Lb1), 
-                    self.rand(xu.Lb2,xu.sig_Lb2), 
-                    xu.Lcut_L,
-                    self.rand(xu.alpha1,xu.sig_a1), 
-                    self.rand(xu.alpha2,xu.sig_a2), 
-                    self.rand(xu.alpha3,xu.sig_a3)
-                )
+        # self.modelsH = {
+        #     "Mi12S" : self.Mineo12S,
+        #     "0"     : self.Mineo12S,
+        #     0       : self.Mineo12S,
+        #     "Mi12B" : self.Mineo12B,
+        #     "1"     : self.Mineo12B,
+        #     1       : self.Mineo12B,
+        #     "Le21"  : self.Lehmer21,
+        #     "2"     : self.Lehmer21,
+        #     2       : self.Lehmer21,
+        # }
     
-    def Mineo12S(self, bRand: bool = False) -> tuple:
-        """
-        Initializes model parameters for HMXB LFs of Mineo+12 single PL
-        returns tuple of parameters for easy pass to other functions
-        return (norm1, break1, break2, cut-off, slope1, slope2, slope3)
-        -----
-        bRand       :   boolean switching between randomized parameters\\
-                            according to their uncertainty
-        """
-        if not bRand:
-            return (xu.xi_s, xu.Lcut_Hs, xu.gamma_s)
-        else:
-            return (10**self.rand(xu.log_xi_s, xu.log_sig_xi_s), 
-                    xu.Lcut_Hs,
-                    self.rand(xu.gamma_s,xu.sig_gam_s)
-                )
-
-    def Mineo12B(self, bRand: bool = False) -> tuple:
-        """
-        Initializes model parameters for HMXB LFs of Mineo+12 single PL
-        returns tuple of parameters for easy pass to other functions
-        return (norm1, break1, break2, cut-off, slope1, slope2, slope3)
-        -----
-        bRand       :   boolean switching between randomized parameters\\
-                            according to their uncertainty
-        """
-        if not bRand:
-            return (xu.xi2_b, xu.LbH ,xu.Lcut_Hb, xu.gamma1_b, xu.gamma2_b)
-        else:
-            return (self.rand(xu.xi2_b, xu.sig_xi2),
-                    self.rand(xu.LbH, xu.sig_LbH),
-                    xu.Lcut_Hb,
-                    self.rand(xu.gamma1_b, xu.sig_g1),
-                    self.rand(xu.gamma2_b, xu.sig_g2)
-                )
-    
-    def Lehmer21(self, bRand: bool = False) -> tuple:
-        """
-        Initializes model parameters for HMXB LFs of Mineo+12 single PL
-        returns tuple of parameters for easy pass to other functions
-        return (norm1, break1, break2, cut-off, slope1, slope2, slope3)
-        -----
-        logOH12     :   metallicity measure, used to scale model parameters
-                        refers to convention '12+log(O/H)'
-        bRand       :   boolean switching between randomized parameters\\
-                        according to their uncertainty. Does not randomize 
-                        logOH12 as it is an external scaling parameter
-        -----
-        return (xu.A_h, 10**xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ, logOH12)
-        """
-        if not bRand:
-            return (xu.A_h, 10**xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ)
-        else:
-            return (self.rand(xu.A_h, xu.sig_Ah),
-                    10**self.rand(xu.logLb, xu.sig_logLb),
-                    self.rand(xu.logLc,xu.sig_logLc),
-                    self.rand(xu.logLc_logZ,xu.sig_logLcZ),
-                    self.rand(xu.g1_h,xu.sig_g1h),
-                    self.rand(xu.g2_h,xu.sig_g2h),
-                    self.rand(xu.g2_logZ,xu.sig_g2logZ)
-                )
-    
-    def rand(self, mu, sigma, size=None):
-        return np.random.normal(mu,sigma,size)
-    
-    def calc_Nlxb(self, 
+    def calc_Zhang12(self, 
                   lum_in: float, K1: float, 
                   Lb1: float, Lb2: float, Lcut: float,
                   alpha1: float, alpha2: float, alpha3: float) -> float:
@@ -191,49 +101,10 @@ class XRB:
         else:
             return 0
 
-    def model_Nlxb(self, case: str = '0', Mstar: float = 1., bRand: bool = False) -> np.ndarray:
-        """
-        Vectorization of analytic solutions. Depending on value passed to 'case',\\
-            different model parameters can be loaded
-        -----
-        Mstar       :   Rescaling parameter in units of 1.e11 solar masses
-        bRand       :   boolean switching between randomized parameters\\
-                            according to their uncertainty
-        case        :   Decides which model to use, by passing KeyWord strings:\\
-                        'Zh12' -> Zhang+2012\\
-                        'Le19' -> Lehmer+2019\\
-                        ...
-                        Can also be accessed by passing integers starting from 0
-        """
-
-        vec_calc_Nlxb = np.vectorize(self.calc_Nlxb)
-
-        try:
-            par: tuple = self.modelsL[case](bRand)
-
-        except KeyError:
-            raise KeyError("Desired model '"+str(case)+"' not implemented! Available models are",
-                           [key for key in self.modelsL.keys() if len(str(key))>2]
-                        )
-
-        Nlx_arr = vec_calc_Nlxb(self.lumarr/1.e36, *par)
-        return Nlx_arr * Mstar
-
-    def Knorm(self, K: float, L1: float, L2: float, alpha: float):
-        """
-        Calculates normalization for changing slopes
-        -----
-        K           :   normalization of previous slope
-        L1          :   lower luminosity limit for slope range
-        L2          :   higher luminosity limit for slope range 
-        alpha       :   slope of the desired range
-        """
-        return ( K * ( L1 / L2 )**alpha )
-
-    def calc_Nhxb_SPL(self, lum_in: float, 
+    def calc_SPL(self, lum_in: float, 
                       xi: float, Lcut: float, gamma: float ) -> float:
         """
-        Analytic solution of HMXB single Power-Law luminosity function (Mineo+2012)\\
+        Analytic solution of single Power-Law integral for luminosity functions\\
         Used for vectorization in model_Nhxb()
         -----
         lum_in      :   input luminosity in units of 1.e38 erg/s
@@ -246,20 +117,18 @@ class XRB:
         
         return xi/(gamma-1.)*((lum_in)**(1.-gamma)-(Lcut)**(1.-gamma))
 
-    def calc_Nhxb_BPL(self, lum_in: float,
+    def calc_BPL(self, lum_in: float,
                       xi: float, Lb1: float, Lcut: float,
                       gamma1: float, gamma2: float ) -> float:
         """
-        Analytic solution of HMXB broken Power-Law luminosity function (Mineo+2012)\\
-        Used for vectorization in model_Nhxb()
+        Analytic solution of broken Power-Law integral for luminosity functions\\
+        Used for vectorization in model_Nhxb(). 
         -----
         lum_in      :   input luminosity in units of 1.e38 erg/s
         xi          :   normalization constant
         Lb1         :   luminosity break in units of 1.e38 erg/s
         gamma1      :   Power-Law slope uo to first
         Lcut        :   Luminosity cut-off in 1.e38 erg/s
-        SFR         :   Star-Formation-Rate in units of Msun/yr\\
-                        Used for rescaling of normalization
         """
 
         if (lum_in < Lb1):
@@ -270,15 +139,13 @@ class XRB:
         elif (lum_in >= Lb1) and (lum_in < Lcut):
             return xi * Lb1**(gamma2-gamma1)*(lum_in**(1.-gamma2) - Lcut**(1.-gamma2)) / (gamma2-1.)
 
-    def calc_Nhxb_met(self, lum_in: float,
+    def calc_Lehmer21(self, lum_in: float,
                       A: float, Lb: float, logLc: float, logLc_logZ: float,
                       g1: float, g2: float, g2_logZ: float,
                       logOH12: float ) -> float:
         """
         Analytic solution of 'self.diff_Nhxb_met()' for metallicity enhanced HMXB LF in Lehmer+21\\
         Makes use of a custom implementation of the incomplete upper Gamma function
-        using recursion to solve for negative inputs for 'a'. 
-        See "http://en.wikipedia.org/wiki/Incomplete_gamma_function#Properties"
 
         NOTE: authors were not clear about normalization A in the Lehmer+21. They refer to Lehmer+19
         for a non-metallicity model of HMXBs which is normalized to 1e38 erg/s
@@ -314,55 +181,190 @@ class XRB:
         end     = 10**(self.Lmax-38)
 
         if lum_in < Lb:
-            return( A * ( pre1 * ( GammaInc(slope1,lum_in/LcZ) - GammaInc(slope1,Lb/LcZ) )
-                    + pre2 * ( GammaInc(slope2,Lb/LcZ) - GammaInc(slope2,end/LcZ)) )
+            return( A * ( pre1 * ( GammaIncc(slope1,lum_in/LcZ) - GammaIncc(slope1,Lb/LcZ) )
+                    + pre2 * ( GammaIncc(slope2,Lb/LcZ) - GammaIncc(slope2,end/LcZ)) )
                 )
         else:
-            return A * pre2 * ( GammaInc(slope2,lum_in/LcZ) - GammaInc(slope2,end/LcZ))
+            return A * pre2 * ( GammaIncc(slope2,lum_in/LcZ) - GammaIncc(slope2,end/LcZ))
 
-    def model_Nhxb(self, case: str = '0', SFR: float = 1., logOH12: float = 8.69, bRand: bool = False ):
+    def Knorm(self, K: float, L1: float, L2: float, alpha: float):
         """
-        Vectorization of analytic solutions. Depending on value passed to 'case',\\
-            different model parameters can be loaded
+        Calculates normalization for changing slopes
         -----
-        SFR         :   Rescaling parameter in units of Msun/yr
-        logOH12     :   metallicity 
+        K           :   normalization of previous slope
+        L1          :   lower luminosity limit for slope range
+        L2          :   higher luminosity limit for slope range 
+        alpha       :   slope of the desired range
+        """
+        return ( K * ( L1 / L2 )**alpha )
+
+    def par_rand(self, mu, sigma, size=None):
+        return np.random.normal(mu,sigma,size)
+
+class LMXB(XRB):
+    
+    def __init__(self, nchan: int = 10000, Lmin: float = 34, Lmax: float = 41, Emin: float = 0.05, Emax: float = 50.1) -> None:
+        """
+        Additionally initializes vectorized functions of underlying models
+        """
+        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        self.vec_calc_SPL = np.vectorize(super().calc_SPL)
+        self.vec_calc_BPL = np.vectorize(super().calc_BPL)
+        self.vec_calc_Zhang12 = np.vectorize(super().calc_Zhang12)
+
+    def Zhang12(self, Mstar: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+        """
+        Initializes model parameters for LMXB LFs of Zhang+12
+        returns array of either number of LMXBs > L or total luminosity
+        -----
+        Mstar       :   model scaling, as host-galaxy's stellar mass in units of 1.e11
         bRand       :   boolean switching between randomized parameters\\
                             according to their uncertainty
-        case        :   Decides which model to use, by passing KeyWord strings\\
-                        'Mi12s' -> Mineo+2012 single PL\\
-                        'Mi12b' -> Mineo+2012 broken PL\\
-                        'Le20'  -> Lehmer+2020 broken PL\\
-                        'Le21'  -> Lehmer+2021 metallicity\\
-                        ...
-                        Can also be accessed by passing integers starting from 0
-                        
+        bLum        :   boolean switch between returning cumulative number function or total 
+                        luminosity. Since these are negative power laws, we modify input slope
+                        by -1
+        -----
+        in function
+        norm1       :   Normalization in units of 1.e11 solar masses
+        Lb1         :   First luminosity break in units of 1e36 erg/s
+        Lb2         :   Second luminosity break in 1e36 erg/s
+        Lcut        :   Luminosity cut-off in 1.e36 erg/s
+        alpha1      :   Power-Law slope up to first break
+        alpha2      :   Power-Law slope from first to second break
+        alpha3      :   Power-Law slope from second break to cut-off
+        par         :   tuple of parameters loaded from xrb_units.py
+        arr         :   return array
         """
+        if Mstar < 0.:
+            raise ValueError("Mstar can not be smaller than zero")
 
-        vec_calc_Nhxb_SPL = np.vectorize(self.calc_Nhxb_SPL)
-        vec_calc_Nhxb_BPL = np.vectorize(self.calc_Nhxb_BPL)
-        vec_calc_Nhxb_met = np.vectorize(self.calc_Nhxb_met)
+        if not bRand:
+            par = (xu.norm1, xu.Lb1, xu.Lb2, xu.Lcut_L, xu.alpha1, xu.alpha2, xu.alpha3)
+        else:
+            par = ( self.par_rand(xu.norm1,xu.sig_K1),
+                    self.par_rand(xu.Lb1,xu.sig_Lb1), 
+                    self.par_rand(xu.Lb2,xu.sig_Lb2), 
+                    xu.Lcut_L, # has no uncertainty given in Zhang+12
+                    self.par_rand(xu.alpha1,xu.sig_a1), 
+                    self.par_rand(xu.alpha2,xu.sig_a2), 
+                    self.par_rand(xu.alpha3,xu.sig_a3)
+                  )
 
-
-        try:
-            par: tuple = self.modelsH[case](bRand=bRand)
-
-        except KeyError:
-            raise KeyError("Desired model '"+str(case)+"' not implemented! Available models are",
-                           [key for key in self.modelsH.keys() if len(str(key))>2]
-                        )
+        if bLum:
+            par[5] -= 1
+            par[6] -= 1
+            par[7] -= 1
         
-        if len(par) == 3:
-            Nhx_arr = vec_calc_Nhxb_SPL(self.lumarr/1.e38, *par)
-        elif len(par) == 5:
-            Nhx_arr = vec_calc_Nhxb_BPL(self.lumarr/1.e38, *par)
-        elif len(par) == 7:
-            par += (logOH12,)
-            Nhx_arr = vec_calc_Nhxb_met(self.lumarr/1.e38, *par)
+        arr = self.vec_calc_Zhang12(self.lumarr/1.e36, *par)
 
-        return Nhx_arr * SFR
+        return arr * Mstar
 
+class HMXB(XRB):
+    def __init__(self, nchan: int = 10000, Lmin: float = 34, Lmax: float = 41, Emin: float = 0.05, Emax: float = 50.1) -> None:
+        """
+        Additionally initializes vectorized functions of underlying models
+        """
+        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        self.vec_calc_SPL = np.vectorize(super().calc_SPL)
+        self.vec_calc_BPL = np.vectorize(super().calc_BPL)
+        self.vec_calc_Lehmer21 = np.vectorize(super().calc_Lehmer21)
 
+    def Mineo12S(self, SFR: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+        """
+        Initializes model parameters for HMXB LFs of Mineo+12 single PL
+        returns array of either number of HMXBs > L or total luminosity of HMXBs > L
+        -----
+        SFR         :   model scaling, as host-galaxy's star formation rate
+                        in units of Msun/yr
+        bRand       :   boolean switching between randomized parameters\\
+                            according to their uncertainty
+        bLum        :   boolean switch between returning cumulative number function or total 
+                        luminosity. Since these are negative power laws, we modify input slope
+                        by -1
+        """
+        if not bRand:
+            par = (xu.xi_s, xu.Lcut_Hs, xu.gamma_s)
+        else:
+            par = ( 10**self.rand(xu.log_xi_s, xu.log_sig_xi_s), 
+                    xu.Lcut_Hs,
+                    self.rand(xu.gamma_s,xu.sig_gam_s)
+                  )
+        
+        if bLum:
+            par[2] -= 1
+
+        arr = self.vec_calc_SPL(self.lumarr/1.e38, *par)
+
+        return arr * SFR
+
+    def Mineo12B(self, SFR: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+        """
+        Initializes model parameters for HMXB LFs of Mineo+12 broken PL
+        returns array of either number of HMXBs > L or total luminosity of HMXBs > L
+        -----
+        SFR         :   model scaling, as host-galaxy's star formation rate
+                        in units of Msun/yr
+        bRand       :   boolean switching between randomized parameters\\
+                            according to their uncertainty
+        bLum        :   boolean switch between returning cumulative number function or total 
+                        luminosity. Since these are negative power laws, we modify input slope
+                        by -1
+        """
+        if not bRand:
+            par = (xu.xi2_b, xu.LbH ,xu.Lcut_Hb, xu.gamma1_b, xu.gamma2_b)
+        else:
+            par = ( self.rand(xu.xi2_b, xu.sig_xi2),
+                    self.rand(xu.LbH, xu.sig_LbH),
+                    xu.Lcut_Hb,
+                    self.rand(xu.gamma1_b, xu.sig_g1),
+                    self.rand(xu.gamma2_b, xu.sig_g2)
+                  )
+
+        if bLum:
+            par[-1] -= 1
+            par[-2] -= 1
+        
+        arr = self.vec_calc_BPL(self.lumarr/1.e38, *par)
+
+        return arr * SFR
+
+        
+    
+    def Lehmer21(self, logOH12: float = 8.69, SFR: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+        """
+        Initializes model parameters for HMXB LFs of Mineo+12 single PL
+        returns array of either number of HMXBs > L or total luminosity of HMXBs > L
+        -----
+        logOH12     :   metallicity measure, used to scale model parameters
+                        refers to convention '12 + log(O/H)'
+        SFR         :   model scaling, as host-galaxy's star formation rate
+                        in units of Msun/yr
+        bLum        :   boolean switch between returning cumulative number function or total 
+                        luminosity. Since these are negative power laws, we modify input slope
+                        by -1
+        bRand       :   boolean switching between randomized parameters\\
+                        according to their uncertainty. Does not randomize 
+                        logOH12 as it is an external scaling parameter
+        """
+        if not bRand:
+            par = ( xu.A_h, 10**xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ )
+        else:
+            par = ( self.rand(xu.A_h, xu.sig_Ah),
+                    10**self.rand(xu.logLb, xu.sig_logLb),
+                    self.rand(xu.logLc,xu.sig_logLc),
+                    self.rand(xu.logLc_logZ,xu.sig_logLcZ),
+                    self.rand(xu.g1_h,xu.sig_g1h),
+                    self.rand(xu.g2_h,xu.sig_g2h),
+                    self.rand(xu.g2_logZ,xu.sig_g2logZ)
+                )
+
+        if bLum:
+            par[4] -= 1
+            par[5] -= 1
+        
+        arr = self.vec_calc_Lehmer21(self.lumarr/1.e38,*par,logOH12)
+
+        return arr * SFR
 
 
 
@@ -379,11 +381,13 @@ if __name__ == "__main__":
     import time
     import helper
     
-    xrb = XRB(Lmin=36)
-    OH = [7,7.5,8,8.5,9]
+    hxb = HMXB(Lmin=36)
+    OH = [x for x in np.arange(7,9,0.2)]
     # Nhx = xrb.model_Nhxb(2)
     for oh in OH:
-        plt.plot( np.log10(xrb.lumarr),np.log10(xrb.model_Nhxb(2,logOH12=oh)),label=f'{oh:.1f}' )
+        plt.plot( np.log10(hxb.lumarr),np.log10(hxb.Lehmer21(logOH12=oh)),label=f'{oh:.1f}' )
+        print(f'{oh:.1f}, {np.log10(hxb.lumarr[6000]):.2f}, {hxb.Lehmer21(logOH12=oh)[6000]:.2f}')
+    plt.plot( np.log10(hxb.lumarr),np.log10(hxb.Mineo12S()),c='k',label='Mineo+12' )
     plt.xlim([36,41])
     plt.ylim([-2.5,2.5])
     plt.legend()
