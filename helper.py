@@ -1,16 +1,17 @@
-from typing import Callable
+
 import numpy as np
 from scipy.special import gammaincc, gamma
+from numba import njit
 
 class Integrate:
 
-    def Riemann(self, func: Callable, lim_l: float, lim_u: float, n: int, *arg: tuple) -> float:
+    def Riemann(self, func: np.ufunc, lim_l: float, lim_u: float, n: int, *arg: tuple) -> float:
         eval = np.linspace(lim_l,lim_u,n)
         delta = np.diff(eval)
         res = func(eval[:n-1]+delta/2,*arg)*delta
         return np.sum(res)
-
-    def Riemann_log(self, func: Callable, 
+    
+    def Riemann_log(self, func: np.ufunc, 
                     lim_l: float, lim_u: float, n: int, *arg: tuple) -> float:
         """
         Custom implementation of a mid-point Riemann sum approximation with logarithmic
@@ -76,13 +77,13 @@ def GammaIncc(a,x):
 
 class experimental:
     def diff_Nhxb_met(self, lum_in: float,
-                      A: float, Lb: float, logLc: float, logLc_logZ: float,
+                      A: float, logLb: float, logLc: float, logLc_logZ: float,
                       g1: float, g2: float, g2_logZ: float,
                       logOH12: float ) -> float:
         """
         Differential function dN/dL for metallicity enhanced HMXB LF in Lehmer+21\\
         Needs to be integrated numerically. See implementation
-        of 'self.Riemann_log(func: Callable, l_min: float, l_max: float, *par: tuple)'.
+        of 'self.Riemann_log(func: ufunc, l_min: float, l_max: float, *par: tuple)'.
 
         NOTE: authors were not clear about normalization A in the Lehmer+21. They refer to Lehmer+19
         for a non-metallicity model of HMXBs which is normalized to 1e38 erg/s
@@ -105,7 +106,7 @@ class experimental:
 
         # need to rescale to 1.e38 erg/s normalization
         LcZ = 10**( logLc + logLc_logZ * ( logOH12 - 8.69 ) ) / 1.e38
-        Lb  = Lb/1.e38
+        Lb  = 10**(logLb-38)
 
         g2Z = g2 + g2_logZ * ( logOH12 - 8.69 )
         
