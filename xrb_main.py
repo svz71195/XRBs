@@ -1,5 +1,5 @@
-from typing import Callable
 import numpy as np
+from numba import njit
 from scipy.special import gammaincc, gamma
 import xrb_units as xu
 
@@ -140,9 +140,9 @@ class XRB:
             return xi * Lb1**(gamma2-gamma1)*(lum_in**(1.-gamma2) - Lcut**(1.-gamma2)) / (gamma2-1.)
 
     def calc_Lehmer21(self, lum_in: float,
-                      A: float, Lb: float, logLc: float, logLc_logZ: float,
+                      A: float, logLb: float, logLc: float, logLc_logZ: float,
                       g1: float, g2: float, g2_logZ: float,
-                      logOH12: float ) -> float:
+                      logOH12: float) -> float:
         """
         Analytic solution of 'self.diff_Nhxb_met()' for metallicity enhanced HMXB LF in Lehmer+21\\
         Makes use of a custom implementation of the incomplete upper Gamma function
@@ -169,8 +169,8 @@ class XRB:
         end         :   upper integration limit ~infinity
         """
 
-        LcZ = 10**( logLc + logLc_logZ * ( logOH12 - 8.69 ) - 38 )
-        Lb  = Lb / 1.e38
+        LcZ = 10**( logLc + ( logLc_logZ * ( logOH12 - 8.69 ) ) - 38 )
+        Lb  = 10**(logLb - 38)
 
         g2Z = g2 + g2_logZ * ( logOH12 - 8.69 )
 
@@ -187,7 +187,7 @@ class XRB:
         else:
             return A * pre2 * ( GammaIncc(slope2,lum_in/LcZ) - GammaIncc(slope2,end/LcZ))
 
-    def Knorm(self, K: float, L1: float, L2: float, alpha: float):
+    def Knorm(self, K: float, L1: float, L2: float, alpha: float) -> float:
         """
         Calculates normalization for changing slopes
         -----
@@ -198,8 +198,85 @@ class XRB:
         """
         return ( K * ( L1 / L2 )**alpha )
 
-    def par_rand(self, mu, sigma, size=None):
+    def par_rand(self, mu, sigma, size=None) -> float:
+        """
+        Randomizes input parameters of models in subclasses LMXB and HMXB
+        """
         return np.random.normal(mu,sigma,size)
+
+    def calc_pCDF(self, inp: np.ndarray) -> np.ndarray:
+        """
+        Calculates pseudo CDF from model input
+        -----
+        inp         :   model input obtained from subclasses
+        """
+        if isinstance(inp,np.ndarray):
+            return 1. - inp/inp[0]
+        elif isinstance(inp,[]):
+            pCDF = []
+            for a in inp:
+                pCDF.append( 1 - a/inp[0] )
+            return pCDF
+
+    def sample(self, inp: np.ndarray, NXRB: int) -> np.ndarray:
+        if len(inp) != len(self.lumarr):
+            # should not happen if inp is generated in the scope of XRB()
+            raise IndexError("Input array is not the same length as intrinsic luminosity")
+
+        inpCDF = self.calc_pCDF(inp)
+        
+        return self._sample(LumArr=self.lumarr,CDF=inpCDF,N=NXRB)
+
+    @staticmethod
+    @njit
+    def _sample(LumArr: np.ndarray, CDF: np.ndarray, N: int) -> np.ndarray:
+        """
+        Wrapper function for self.sample(). Associates luminosities to population of XRBs 
+        according to a given CDF. LumArr and CDF should have the same length
+        -----
+        LumArr      :   Input luminosity np.ndarray, usually passes with self.lumarr
+        CDF         :   Input CDF derived from a XLF model. Should have the same length as
+                            LumArr
+        N           :   Population/Sample size. Needs to be integer
+        """
+        
+        jj = 1
+        kk = 1
+        lum = np.zeros(N)
+        ranvec = np.sort( np.random.rand(N) )
+        
+        for ii in range(0,N):
+            jj = kk     # restart from jj where it arrived previously
+            if jj == len(CDF) - 1:
+                break   # otherwise, loop produces error due to overcounting
+            while ( CDF[jj] < ranvec[ii] ):
+                jj +=1
+                if jj == len(CDF) - 1:
+                    break
+            kk == jj
+            lum[ii] = LumArr[jj-1]+(LumArr[jj]-LumArr[jj-1])*(ranvec[ii]-CDF[jj-1])/(CDF[jj]-CDF[jj-1])
+        return lum
+
+    def count(self, samp: np.ndarray, lim: float) -> int:
+        """
+        Counts the number of XRBs with a luminosity greater than a certain value 'lim' from
+        the given sample
+        -----
+        samp        :   Sample of XRBs as an list/np.ndarray containing their luminosities
+        lim         :   Luminosity limit above which XRBs from samp are counted     
+        """
+        m = (samp >= lim)
+        return len(samp[m])
+    
+    def lum_sum(self, samp: np.ndarray, lim: float = 1.e35) -> float:
+        """
+        Sums luminosities of XRBs in sample which have individual luminosities greater than 'lim'
+        -----
+        samp        :   Sample of XRBs as an list/np.ndarray containing their luminosities
+        lim         :   Luminosity limit above which XRBs from samp are counted  
+        """
+        m = (samp >= lim)
+        return np.sum(samp[m])
 
 class LMXB(XRB):
     
@@ -251,9 +328,11 @@ class LMXB(XRB):
                   )
 
         if bLum:
+            par = list(par)
             par[5] -= 1
             par[6] -= 1
             par[7] -= 1
+            par = tuple(par)
         
         arr = self.vec_calc_Zhang12(self.lumarr/1.e36, *par)
 
@@ -285,13 +364,15 @@ class HMXB(XRB):
         if not bRand:
             par = (xu.xi_s, xu.Lcut_Hs, xu.gamma_s)
         else:
-            par = ( 10**self.rand(xu.log_xi_s, xu.log_sig_xi_s), 
+            par = ( 10**self.par_rand(xu.log_xi_s, xu.log_sig_xi_s), 
                     xu.Lcut_Hs,
-                    self.rand(xu.gamma_s,xu.sig_gam_s)
+                    self.par_rand(xu.gamma_s,xu.sig_gam_s)
                   )
         
         if bLum:
+            par = list(par)
             par[2] -= 1
+            par = tuple(par)
 
         arr = self.vec_calc_SPL(self.lumarr/1.e38, *par)
 
@@ -313,16 +394,18 @@ class HMXB(XRB):
         if not bRand:
             par = (xu.xi2_b, xu.LbH ,xu.Lcut_Hb, xu.gamma1_b, xu.gamma2_b)
         else:
-            par = ( self.rand(xu.xi2_b, xu.sig_xi2),
-                    self.rand(xu.LbH, xu.sig_LbH),
+            par = ( self.par_rand(xu.xi2_b, xu.sig_xi2),
+                    self.par_rand(xu.LbH, xu.sig_LbH),
                     xu.Lcut_Hb,
-                    self.rand(xu.gamma1_b, xu.sig_g1),
-                    self.rand(xu.gamma2_b, xu.sig_g2)
+                    self.par_rand(xu.gamma1_b, xu.sig_g1),
+                    self.par_rand(xu.gamma2_b, xu.sig_g2)
                   )
 
         if bLum:
+            par = list(par)
             par[-1] -= 1
             par[-2] -= 1
+            par = tuple(par)
         
         arr = self.vec_calc_BPL(self.lumarr/1.e38, *par)
 
@@ -347,51 +430,220 @@ class HMXB(XRB):
                         logOH12 as it is an external scaling parameter
         """
         if not bRand:
-            par = ( xu.A_h, 10**xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ )
+            par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ )
         else:
-            par = ( self.rand(xu.A_h, xu.sig_Ah),
-                    10**self.rand(xu.logLb, xu.sig_logLb),
-                    self.rand(xu.logLc,xu.sig_logLc),
-                    self.rand(xu.logLc_logZ,xu.sig_logLcZ),
-                    self.rand(xu.g1_h,xu.sig_g1h),
-                    self.rand(xu.g2_h,xu.sig_g2h),
-                    self.rand(xu.g2_logZ,xu.sig_g2logZ)
+            par = ( self.par_rand(xu.A_h, xu.sig_Ah),
+                    self.par_rand(xu.logLb, xu.sig_logLb),
+                    self.par_rand(xu.logLc,xu.sig_logLc),
+                    self.par_rand(xu.logLc_logZ,xu.sig_logLcZ),
+                    self.par_rand(xu.g1_h,xu.sig_g1h),
+                    self.par_rand(xu.g2_h,xu.sig_g2h),
+                    self.par_rand(xu.g2_logZ,xu.sig_g2logZ)
                 )
 
         if bLum:
-            par[4] -= 1
-            par[5] -= 1
+            # par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h - 1 , xu.g2_h - 1, xu.g2_logZ )
+            par = list(par)
+            par[4] = par[4] - 1.
+            par[5] = par[5] - 1.
+            par = tuple(par)
         
         arr = self.vec_calc_Lehmer21(self.lumarr/1.e38,*par,logOH12)
 
         return arr * SFR
 
+import itertools
+
+def model_err(mod: np.ufunc, LumArr: np.ndarray, args: tuple, logOH12: float) -> tuple:
+
+    errU = np.array([])
+    errL = np.array([])
+    comb: tuple = itertools.product(*args) # tuple of tuples
+    calc = []
+    for combi in comb:
+        try:
+            calc.append( mod( LumArr,*combi, logOH12 ) )
+        except TypeError:
+            calc.append( mod(lum_in=LumArr,*combi) )
+    
+    print(len(calc))
+    print(len(calc[0]))
+    for i in range(len(calc[0])):
+        errU = np.append( errU, np.amax( [z[i] for z in calc] ) )
+        errL = np.append( errL, np.amin( [z[i] for z in calc] ) )
+    return (errU, errL)
+
+    # a = ()
+    # b = ()
+    # for x in args:
+    #     a += (x[1],)
+    #     b += (x[2],)
+
+    # try:
+    #     errU = ( mod( LumArr,*a, logOH12 ) )
+    #     errL = ( mod( LumArr,*b, logOH12 ) )
+    # except TypeError:
+    #     errU = ( mod( LumArr,*a ) )
+    #     errL = ( mod( LumArr,*b ) )
+    
+    # return (errU, errL)
+
+
+    
+
 
 
 if __name__ == "__main__":
-    # x = XRB()
-    import matplotlib.pyplot as plt
-    # plt.plot(x.lumarr,x.model_Nhxb(),c='k',label='True')
-    # plt.plot(x.lumarr,x.model_Nhxb(0,1,True))
-    # plt.plot(x.lumarr,x.model_Nhxb(0,1,True))
-    # plt.plot(x.lumarr,x.model_Nhxb(0,1,True))
-    # plt.legend()
-    # plt.show()
 
+    import matplotlib.pyplot as plt
+    from matplotlib.widgets import Slider
     import time
     import helper
     
-    hxb = HMXB(Lmin=36)
-    OH = [x for x in np.arange(7,9,0.2)]
-    # Nhx = xrb.model_Nhxb(2)
-    for oh in OH:
-        plt.plot( np.log10(hxb.lumarr),np.log10(hxb.Lehmer21(logOH12=oh)),label=f'{oh:.1f}' )
-        print(f'{oh:.1f}, {np.log10(hxb.lumarr[6000]):.2f}, {hxb.Lehmer21(logOH12=oh)[6000]:.2f}')
-    plt.plot( np.log10(hxb.lumarr),np.log10(hxb.Mineo12S()),c='k',label='Mineo+12' )
-    plt.xlim([36,41])
-    plt.ylim([-2.5,2.5])
-    plt.legend()
+    # blo = helper.experimental()
+    # vec = np.vectorize(blo.diff_Nhxb_met)
+    # par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ, 7.4 )
+    # end = 1.e4
+    # N = 200000
+     
+    # bla = helper.Integrate()
+    # s = time.time()
+    # Nhx_arr = bla.Riemann_log(vec,10,end,N,*par)
+    # end = time.time()-s
+    # print(end,Nhx_arr)
+
+
+    hxb = HMXB(Lmin=35,Lmax=41,nchan=10000)
+    Li = np.array([7,7.2,7.4,7.6,7.8,8.,8.2,8.4,8.6,8.8,9.,9.2])
+    Lo = [4.29,4.27,3.97,3.47,2.84,2.2,1.62,1.15,0.8,0.54,0.37,0.25]
+    Lo2 = [1.60,1.80,1.83,1.68,1.41,1.09,0.77,0.51,.32,.2,.11,.07]
+    OH = np.linspace(7,9.2,12)
+    SFR = [0.01,0.1,1,10,100]
+    par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ )
+    N39 = np.vectorize(hxb.calc_Lehmer21)
+    foo=10**.54
+
+    import tqdm
+    
+    errU = np.array([]) # np.zeros((len(OH),len(SFR)))
+    errL = np.array([]) # np.zeros((len(OH),len(SFR)))
+    # N39U = np.zeros(len(OH))
+    # N39L = np.zeros(len(OH))
+    errm = np.array([]) # np.zeros((len(OH),len(SFR)))
+    for k,oh in enumerate(tqdm.tqdm(OH)):
+        blob = np.array([])
+        blub = np.array([])
+        print(oh, np.log10(hxb.Lehmer21(logOH12=oh,bLum=True)[0])+38)
+        for j,sfr in enumerate(SFR):
+            h = hxb.Lehmer21(logOH12=oh,SFR=sfr)
+            G = np.zeros(1000)
+            L = np.zeros(1000)
+            N = int(h[0])
+            for i in range(1000):
+                dist = hxb.sample(h,N)
+                L[i] = hxb.lum_sum(dist) / sfr
+                G[i] = (hxb.count(dist,1.e39) / sfr)
+            blob = np.append(blob,G)
+            print(np.log10(np.median(L)),np.log10(np.percentile(L,84)),np.log10(np.percentile(L,16)))
+        # print(blob)
+        errU = np.append(errU,np.percentile(blob,84))
+        errL = np.append(errL,np.percentile(blob,16))
+        errm = np.append(errm,np.percentile(blob,50))
+            # errU[k][j] = np.percentile(G,84)
+            # errL[k][j] = np.percentile(G,16)
+            # errm[k][j] = np.median(G)
+    # print(f'{np.mean(errU,axis=1)}, {np.mean(errL,axis=1)}', errU)
+    N39U = errU # np.mean(errU,axis=1)
+    N39L = errL # np.mean(errL,axis=1)
+    N39m = errm # np.mean(errm,axis=1) 
+    # print(N39U)
+
+    fig, ax = plt.subplots(figsize=(12,10))
+    line, = plt.plot(OH, N39(10, *par, logOH12=OH) )
+    line2, = plt.plot(OH, N39(31.62, *par, logOH12=OH) )
+    line3, = plt.plot(OH, N39U )
+    line4, = plt.plot(OH, N39L )
+    line5, = plt.plot(OH, N39m )
+    # line3, = plt.plot(OH, N39(10, *par, logOH12=OH) )
+    lineM, = plt.plot(Li,Lo, lw=0., marker='x',markersize=8.,c='k',label='N39, Lehmer+21')
+    lineM2, = plt.plot(Li,Lo2, lw=0., marker='x',markersize=8.,c='r',label='N39.5, Lehmer+21')
+    ax.set_xlabel(r'$12+\log[O/H]$',fontsize=12)
+    ax.set_ylabel(r'$N(>L_{39})$',fontsize=12)
+
+    plt.subplots_adjust(bottom=0.5,left=0.05,right=0.95,top=0.95)
+
+    axAh = plt.axes([0.1, 0.42, 0.65, 0.02])
+    axLb = plt.axes([0.1, 0.37, 0.65, 0.02])
+    axLc = plt.axes([0.1, 0.32, 0.65, 0.02])
+    axLz = plt.axes([0.1, 0.27, 0.65, 0.02])
+    axg1 = plt.axes([0.1, 0.22, 0.65, 0.02])
+    axg2 = plt.axes([0.1, 0.17, 0.65, 0.02])
+    axgz = plt.axes([0.1, 0.12, 0.65, 0.02])
+    axOH = plt.axes([0.1, 0.07, 0.65, 0.02])
+    Ah_slider = Slider(ax=axAh, label=r'$A_{HMXB}$', valmin=0.1, valmax=6, valinit=par[0])
+    Lb_slider = Slider(ax=axLb, label=r'$\log{L_b}$', valmin=37, valmax=40, valinit=par[1])
+    Lc_slider = Slider(ax=axLc, label=r'$\log{L_c}$', valmin=39, valmax=41, valinit=par[2])
+    Lz_slider = Slider(ax=axLz, label=r'$d\log{L_c}/d\log{Z}$', valmin=0.1, valmax=2, valinit=par[3])
+    g1_slider = Slider(ax=axg1, label=r'$\gamma_1$', valmin=0.1, valmax=3, valinit=par[4])
+    g2_slider = Slider(ax=axg2, label=r'$\gamma_2$', valmin=0.1, valmax=3, valinit=par[5])
+    gz_slider = Slider(ax=axgz, label=r'$d\gamma_2/d\log{Z}$', valmin=0.1, valmax=3, valinit=par[6])
+    OH_slider = Slider(ax=axOH, label=r'$OH$', valmin=-1, valmax=1, valinit=0)
+
+    def update(val):
+        line.set_ydata(N39(10, Ah_slider.val, (Lb_slider.val), Lc_slider.val, Lz_slider.val, g1_slider.val, g2_slider.val, gz_slider.val, OH+OH_slider.val))
+        line2.set_ydata(N39(31.62, Ah_slider.val, (Lb_slider.val), Lc_slider.val, Lz_slider.val, g1_slider.val, g2_slider.val, gz_slider.val, OH+OH_slider.val))
+        line3.set_ydata(N39(foo, Ah_slider.val, (Lb_slider.val), Lc_slider.val, Lz_slider.val, g1_slider.val, g2_slider.val, gz_slider.val, OH+OH_slider.val))
+        fig.canvas.draw_idle()
+
+    Ah_slider.on_changed(update)
+    Lb_slider.on_changed(update)
+    Lc_slider.on_changed(update)
+    Lz_slider.on_changed(update)
+    g1_slider.on_changed(update)
+    g2_slider.on_changed(update)
+    gz_slider.on_changed(update)
+    OH_slider.on_changed(update)
+
+    ax.legend()
+
+    plt.show()  
+
+    
+    fig2, ax2 = plt.subplots(figsize=(12,10))
+    mod, = plt.plot(hxb.lumarr, N39(hxb.lumarr/1.e38, *par, logOH12=8.69) )
+    ax.set_xlabel(r'$L\, [erg/s]$',fontsize=12)
+    ax.set_ylabel(r'$N(>L)$',fontsize=12)
+
+    plt.subplots_adjust(bottom=0.5,left=0.05,right=0.95,top=0.95)
+
+    axAh = plt.axes([0.1, 0.42, 0.65, 0.02])
+    axLb = plt.axes([0.1, 0.37, 0.65, 0.02])
+    axLc = plt.axes([0.1, 0.32, 0.65, 0.02])
+    axLz = plt.axes([0.1, 0.27, 0.65, 0.02])
+    axg1 = plt.axes([0.1, 0.22, 0.65, 0.02])
+    axg2 = plt.axes([0.1, 0.17, 0.65, 0.02])
+    axgz = plt.axes([0.1, 0.12, 0.65, 0.02])
+    axOH = plt.axes([0.1, 0.07, 0.65, 0.02])
+    Ah_slider = Slider(ax=axAh, label=r'$A_{HMXB}$', valmin=0.1, valmax=6, valinit=par[0])
+    Lb_slider = Slider(ax=axLb, label=r'$\log{L_b}$', valmin=37, valmax=40, valinit=par[1])
+    Lc_slider = Slider(ax=axLc, label=r'$\log{L_c}$', valmin=39, valmax=41, valinit=par[2])
+    Lz_slider = Slider(ax=axLz, label=r'$d\log{L_c}/d\log{Z}$', valmin=0.1, valmax=2, valinit=par[3])
+    g1_slider = Slider(ax=axg1, label=r'$\gamma_1$', valmin=0.1, valmax=3, valinit=par[4])
+    g2_slider = Slider(ax=axg2, label=r'$\gamma_2$', valmin=0.1, valmax=3, valinit=par[5])
+    gz_slider = Slider(ax=axgz, label=r'$d\gamma_2/d\log{Z}$', valmin=0.1, valmax=3, valinit=par[6])
+    OH_slider = Slider(ax=axOH, label=r'$OH$', valmin=6.5, valmax=10, valinit=8.69)
+
+    def update2(val):
+        mod.set_ydata(N39(hxb.lumarr/1.e38, Ah_slider.val, (Lb_slider.val), Lc_slider.val, Lz_slider.val, g1_slider.val, g2_slider.val, gz_slider.val, OH_slider.val))
+        fig2.canvas.draw_idle()
+
+    Ah_slider.on_changed(update2)
+    Lb_slider.on_changed(update2)
+    Lc_slider.on_changed(update2)
+    Lz_slider.on_changed(update2)
+    g1_slider.on_changed(update2)
+    g2_slider.on_changed(update2)
+    gz_slider.on_changed(update2)
+    OH_slider.on_changed(update2)
+
     plt.show()
-    
-    # print(f'{Nhx[2000]}, {Nhx[4000]}, {Nhx[6000]}')
-    
