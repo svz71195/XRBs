@@ -500,17 +500,17 @@ if __name__ == "__main__":
     import time
     import helper
     
-    # blo = helper.experimental()
-    # vec = np.vectorize(blo.diff_Nhxb_met)
-    # par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ, 7.4 )
-    # end = 1.e4
-    # N = 200000
+    blo = helper.experimental()
+    vec = np.vectorize(blo.diff_Nhxb_met)
+    par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ, 7. )
+    end = 1.e4
+    N = 200000
      
-    # bla = helper.Integrate()
-    # s = time.time()
-    # Nhx_arr = bla.Riemann_log(vec,10,end,N,*par)
-    # end = time.time()-s
-    # print(end,Nhx_arr)
+    bla = helper.Integrate()
+    s = time.time()
+    Nhx_arr = bla.Riemann_log(vec,10,end,N,*par)
+    ent = time.time()-s
+    print(ent,Nhx_arr)
 
 
     hxb = HMXB(Lmin=35,Lmax=41,nchan=10000)
@@ -525,46 +525,29 @@ if __name__ == "__main__":
 
     import tqdm
     
-    errU = np.array([]) # np.zeros((len(OH),len(SFR)))
-    errL = np.array([]) # np.zeros((len(OH),len(SFR)))
-    # N39U = np.zeros(len(OH))
-    # N39L = np.zeros(len(OH))
-    errm = np.array([]) # np.zeros((len(OH),len(SFR)))
-    for k,oh in enumerate(tqdm.tqdm(OH)):
-        blob = np.array([])
-        blub = np.array([])
-        print(oh, np.log10(hxb.Lehmer21(logOH12=oh,bLum=True)[0])+38)
-        for j,sfr in enumerate(SFR):
-            h = hxb.Lehmer21(logOH12=oh,SFR=sfr)
-            G = np.zeros(1000)
-            L = np.zeros(1000)
-            N = int(h[0])
-            for i in range(1000):
-                dist = hxb.sample(h,N)
-                L[i] = hxb.lum_sum(dist) / sfr
-                G[i] = (hxb.count(dist,1.e39) / sfr)
-            blob = np.append(blob,G)
-            print(np.log10(np.median(L)),np.log10(np.percentile(L,84)),np.log10(np.percentile(L,16)))
-        # print(blob)
-        errU = np.append(errU,np.percentile(blob,84))
-        errL = np.append(errL,np.percentile(blob,16))
-        errm = np.append(errm,np.percentile(blob,50))
-            # errU[k][j] = np.percentile(G,84)
-            # errL[k][j] = np.percentile(G,16)
-            # errm[k][j] = np.median(G)
-    # print(f'{np.mean(errU,axis=1)}, {np.mean(errL,axis=1)}', errU)
-    N39U = errU # np.mean(errU,axis=1)
-    N39L = errL # np.mean(errL,axis=1)
-    N39m = errm # np.mean(errm,axis=1) 
-    # print(N39U)
+    errU = np.zeros((len(OH),len(SFR)))
+    errL = np.zeros((len(OH),len(SFR)))
+    errm = np.zeros((len(OH),len(SFR)))
+    # for k,oh in enumerate(tqdm.tqdm(OH)):
+    #     print(oh, np.log10(hxb.Lehmer21(logOH12=oh,bLum=True)[0])+38)
+    #     for j,sfr in enumerate(SFR):
+    #         h = hxb.Lehmer21(logOH12=oh,SFR=sfr)
+    #         L = np.zeros(1000)
+    #         N = int(h[0])
+    #         for i in range(1000):
+    #             dist = hxb.sample(h,N)
+    #             L[i] = hxb.lum_sum(dist) / sfr
+    #         print(np.log10(np.median(L)),np.log10(np.percentile(L,84)),np.log10(np.percentile(L,16)))
+    #         errU[k][j] = np.percentile(L,84)
+    #         errL[k][j] = np.percentile(L,16)
+    #         errm[k][j] = np.median(L)
+    L39U = np.median(errU,axis=1)
+    L39L = np.median(errL,axis=1)
+    L39m = np.median(errm,axis=1) 
 
     fig, ax = plt.subplots(figsize=(12,10))
     line, = plt.plot(OH, N39(10, *par, logOH12=OH) )
     line2, = plt.plot(OH, N39(31.62, *par, logOH12=OH) )
-    line3, = plt.plot(OH, N39U )
-    line4, = plt.plot(OH, N39L )
-    line5, = plt.plot(OH, N39m )
-    # line3, = plt.plot(OH, N39(10, *par, logOH12=OH) )
     lineM, = plt.plot(Li,Lo, lw=0., marker='x',markersize=8.,c='k',label='N39, Lehmer+21')
     lineM2, = plt.plot(Li,Lo2, lw=0., marker='x',markersize=8.,c='r',label='N39.5, Lehmer+21')
     ax.set_xlabel(r'$12+\log[O/H]$',fontsize=12)
@@ -592,7 +575,6 @@ if __name__ == "__main__":
     def update(val):
         line.set_ydata(N39(10, Ah_slider.val, (Lb_slider.val), Lc_slider.val, Lz_slider.val, g1_slider.val, g2_slider.val, gz_slider.val, OH+OH_slider.val))
         line2.set_ydata(N39(31.62, Ah_slider.val, (Lb_slider.val), Lc_slider.val, Lz_slider.val, g1_slider.val, g2_slider.val, gz_slider.val, OH+OH_slider.val))
-        line3.set_ydata(N39(foo, Ah_slider.val, (Lb_slider.val), Lc_slider.val, Lz_slider.val, g1_slider.val, g2_slider.val, gz_slider.val, OH+OH_slider.val))
         fig.canvas.draw_idle()
 
     Ah_slider.on_changed(update)
