@@ -1,5 +1,6 @@
 import numpy as np
 from numba import njit
+from numpy.core.fromnumeric import size
 from scipy.special import gammaincc, gamma
 import xrb_units as xu
 
@@ -516,6 +517,8 @@ if __name__ == "__main__":
     hxb = HMXB(Lmin=35,Lmax=41,nchan=10000)
     Li = np.array([7,7.2,7.4,7.6,7.8,8.,8.2,8.4,8.6,8.8,9.,9.2])
     Lo = [4.29,4.27,3.97,3.47,2.84,2.2,1.62,1.15,0.8,0.54,0.37,0.25]
+    Loerr = [[3.07,2.53,1.9,1.33,.88,.54,.31,.18,.15,.13,.11,.09],[7.63,5.09,3.26,2.01,1.19,0.68,0.37,0.21,0.17,0.17,0.16,0.15]]
+    Loerr2 = [[1.45,1.42,1.17,.85,.55,.33,.28,.1,.08,.06,.05,.03],[5.64,3.76,2.38,1.42,.81,0.44,0.23,0.13,0.09,0.08,0.07,0.06]]
     Lo2 = [1.60,1.80,1.83,1.68,1.41,1.09,0.77,0.51,.32,.2,.11,.07]
     OH = np.linspace(7,9.2,12)
     SFR = [0.01,0.1,1,10,100]
@@ -541,17 +544,31 @@ if __name__ == "__main__":
     #         errU[k][j] = np.percentile(L,84)
     #         errL[k][j] = np.percentile(L,16)
     #         errm[k][j] = np.median(L)
+    
+    # nnn = 10000 * 12
+    # sss = np.zeros((len(OH),nnn))
+    # hhh = HMXB(Lmin=39,Lmax=41,nchan=2)
+    # for k,oh in enumerate(tqdm.tqdm(OH)):
+    #     for j in tqdm.trange(nnn):
+    #         sss[k][j] = hhh.Lehmer21(logOH12=oh,bRand=True)[0]
+    # print(sss)
+    # ssss = np.median(sss,axis=1)
+    # sssu = np.percentile(sss,84,axis=1)
+    # sssl = np.percentile(sss,16,axis=1)
+    # print(ssss,sssu,sssl)
     L39U = np.median(errU,axis=1)
     L39L = np.median(errL,axis=1)
     L39m = np.median(errm,axis=1) 
 
     fig, ax = plt.subplots(figsize=(12,10))
-    line, = plt.plot(OH, N39(10, *par, logOH12=OH) )
-    line2, = plt.plot(OH, N39(31.62, *par, logOH12=OH) )
-    lineM, = plt.plot(Li,Lo, lw=0., marker='x',markersize=8.,c='k',label='N39, Lehmer+21')
-    lineM2, = plt.plot(Li,Lo2, lw=0., marker='x',markersize=8.,c='r',label='N39.5, Lehmer+21')
+    line, = plt.plot(OH, N39(10, *par, logOH12=OH), label='N39, analytic integration' )
+    line2, = plt.plot(OH, N39(31.62, *par, logOH12=OH), label='N39.5, analytic integration' )
+    lineM = plt.errorbar(Li, Lo, yerr=Loerr, ms=8.,capsize=3.,capthick=1.,c='k',fmt='x',label='N39, Lehmer+21')
+    lineM2 = plt.errorbar(Li, Lo2, yerr=Loerr2, ms=8.,capsize=3.,capthick=1.,c='r',fmt='x',label='N39.5, Lehmer+21')
+    lineM2[-1][0].set_linestyle('--')
+    # plt.plot(OH,ssss)
     ax.set_xlabel(r'$12+\log[O/H]$',fontsize=12)
-    ax.set_ylabel(r'$N(>L_{39})$',fontsize=12)
+    ax.set_ylabel(r'$N(L>L_{X})$',fontsize=12)
 
     plt.subplots_adjust(bottom=0.5,left=0.05,right=0.95,top=0.95)
 
@@ -570,7 +587,7 @@ if __name__ == "__main__":
     g1_slider = Slider(ax=axg1, label=r'$\gamma_1$', valmin=0.1, valmax=3, valinit=par[4])
     g2_slider = Slider(ax=axg2, label=r'$\gamma_2$', valmin=0.1, valmax=3, valinit=par[5])
     gz_slider = Slider(ax=axgz, label=r'$d\gamma_2/d\log{Z}$', valmin=0.1, valmax=3, valinit=par[6])
-    OH_slider = Slider(ax=axOH, label=r'$OH$', valmin=-1, valmax=1, valinit=0)
+    OH_slider = Slider(ax=axOH, label=r'$OH$ offset', valmin=-1, valmax=1, valinit=0)
 
     def update(val):
         line.set_ydata(N39(10, Ah_slider.val, (Lb_slider.val), Lc_slider.val, Lz_slider.val, g1_slider.val, g2_slider.val, gz_slider.val, OH+OH_slider.val))
@@ -586,7 +603,7 @@ if __name__ == "__main__":
     gz_slider.on_changed(update)
     OH_slider.on_changed(update)
 
-    ax.legend()
+    ax.legend(fontsize=11)
 
     plt.show()  
 
