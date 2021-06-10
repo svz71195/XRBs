@@ -457,8 +457,6 @@ import itertools
 
 def model_err(mod: np.ufunc, LumArr: np.ndarray, args: tuple, logOH12: float) -> tuple:
 
-    errU = np.array([])
-    errL = np.array([])
     comb: tuple = itertools.product(*args) # tuple of tuples
     calc = []
     for combi in comb:
@@ -469,29 +467,24 @@ def model_err(mod: np.ufunc, LumArr: np.ndarray, args: tuple, logOH12: float) ->
     
     print(len(calc))
     print(len(calc[0]))
+    errU = np.zeros(len(calc[0]))
+    errL = np.zeros(len(calc[0]))
     for i in range(len(calc[0])):
-        errU = np.append( errU, np.amax( [z[i] for z in calc] ) )
-        errL = np.append( errL, np.amin( [z[i] for z in calc] ) )
+        errU[i] =  np.amax( [z[i] for z in calc] )
+        errL[i] =  np.amin( [z[i] for z in calc] )
     return (errU, errL)
 
-    # a = ()
-    # b = ()
-    # for x in args:
-    #     a += (x[1],)
-    #     b += (x[2],)
-
-    # try:
-    #     errU = ( mod( LumArr,*a, logOH12 ) )
-    #     errL = ( mod( LumArr,*b, logOH12 ) )
-    # except TypeError:
-    #     errU = ( mod( LumArr,*a ) )
-    #     errL = ( mod( LumArr,*b ) )
+def altZh(la,K,Lb1,Lb2,Lc,a1,a2,a3):
+    if la < Lb1:
+        res = (la**(1-a1)-Lb1**(1-a1))/(a1-1) + Lb1**(a2-a1)*(Lb1**(1-a2)-Lb2**(1-a2))/(a2-1) + Lb1**(a2-a1)*Lb2**(a3-a2)*(Lb2**(1-a3)-Lc**(1-a3))/(a3-1)
+    elif la < Lb2:
+        res = Lb1**(a2-a1)*(la**(1-a2)-Lb2**(1-a2))/(a2-1) + Lb1**(a2-a1)*Lb2**(a3-a2)*(Lb2**(1-a3)-Lc**(1-a3))/(a3-1)
+    elif la < Lc:
+        res = Lb1**(a2-a1)*Lb2**(a3-a2)*(la**(1-a3)-Lc**(1-a3))/(a3-1)
+    else:
+        res = 0
     
-    # return (errU, errL)
-
-
-    
-
+    return res * K
 
 
 if __name__ == "__main__":
@@ -515,6 +508,16 @@ if __name__ == "__main__":
 
 
     hxb = HMXB(Lmin=35,Lmax=41,nchan=10000)
+    lxb = LMXB(nchan=10000)
+    vecL = np.vectorize(lxb.calc_Zhang12)
+    vecalt = np.vectorize(altZh)
+    pL = (xu.norm1*100, xu.Lb1/100, xu.Lb2/100, xu.Lcut_L/100, xu.alpha1, xu.alpha2, xu.alpha3)
+    palt = (54.48265, xu.Lb1/100, xu.Lb2/100, xu.Lcut_L/100, xu.alpha1, xu.alpha2, xu.alpha3)
+    NL = vecL(lxb.lumarr/1.e38,*pL)
+    plt.plot(lxb.lumarr,lxb.Zhang12())
+    plt.plot(lxb.lumarr,NL,ls='--')
+    plt.plot(lxb.lumarr,vecalt(lxb.lumarr/1.e38,*palt),ls='-.')
+    plt.show()
     Li = np.array([7,7.2,7.4,7.6,7.8,8.,8.2,8.4,8.6,8.8,9.,9.2])
     Lo = [4.29,4.27,3.97,3.47,2.84,2.2,1.62,1.15,0.8,0.54,0.37,0.25]
     Loerr = [[3.07,2.53,1.9,1.33,.88,.54,.31,.18,.15,.13,.11,.09],[7.63,5.09,3.26,2.01,1.19,0.68,0.37,0.21,0.17,0.17,0.16,0.15]]
@@ -603,7 +606,7 @@ if __name__ == "__main__":
     linen, = plt.plot(OH, np.log10(N39(.001, *par2, logOH12=OH))+38, label='total L, analytic integration' )
     lineN = plt.errorbar(Li, Lu, yerr=Luerr, ms=8.,capsize=3.,capthick=1.,c='k',fmt='x',label='total Lum, Lehmer+21')
     ax3.set_xlabel(r'$12+\log[O/H]$',fontsize=12)
-    ax3.set_ylabel(r'$L_X / \mathrm{SFR}$',fontsize=12)
+    ax.set_ylabel(r'$L_X / \mathrm{SFR}$',fontsize=12)
 
     plt.subplots_adjust(bottom=0.5,left=0.05,right=0.95,top=0.95)
 
