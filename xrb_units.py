@@ -22,6 +22,22 @@ norm1: float            = 1.01  #+-0.28; per 10^11 solar masses
 sig_K1: float           = 0.28
 
 
+
+##--- LMXB constants, Lehmer+19 ---##
+#--- lumionosities iin units of 1.e38 erg/s ---#
+
+norm2: float            = 33.8
+alph1: float            = 1.28
+alph2: float            = 2.33
+bre: float              = 1.48
+cut: float              = 10**2.7 # (40.7 -38)
+
+sig_norm2: float        = 5.
+sig_alph1: float        = 0.06
+sig_alph2: float        = 0.24
+sig_bre: float          = 0.68
+sig_cut: float          = 0.3
+
 ##--- HMXB constants, Mineo+12, single power law ---##
 
 Lcut_Hs: float          = 1.e3  # in units of 1.e38 erg/s
@@ -48,6 +64,15 @@ sig_g1: float           = 0.02
 sig_g2: float           = (1.58+0.54)/2
 sig_xi2: float          = 0.07
 
+
+##--- HMXB constants, Lehmer+19 ---##
+#--- luminosity breaks in units of 1.e38 erg/s ---#
+norm3: float            = 1.96
+gam: float              = 1.65
+cut                     = cut #as in LMXB model from Lehmer+19
+
+sig_norm3: float        = 0.14
+sig_gam: float          = 0.025
 
 ##--- HMXB constants, Lehmer+21, metallicity ---##
 
