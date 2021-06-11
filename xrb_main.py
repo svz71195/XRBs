@@ -1,4 +1,3 @@
-from numba.core.errors import reset_terminal
 import numpy as np
 from numba import njit
 from numpy.core.fromnumeric import size
