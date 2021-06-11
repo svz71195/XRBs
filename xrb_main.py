@@ -1,3 +1,4 @@
+from numba.core.errors import reset_terminal
 import numpy as np
 from numba import njit
 from numpy.core.fromnumeric import size
@@ -339,6 +340,41 @@ class LMXB(XRB):
 
         return arr * Mstar
 
+    def Lehmer19(self, Mstar: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+        """
+        Initializes model parameters for Lehmer+19 LMXB LFs based on BPL
+        returns array of either number of HMXBs > L or total luminosity of HMXBs > L
+        -----
+        Mstar       :   model scaling, as host-galaxy's stellar mass in units of 1.e11
+        bRand       :   boolean switching between randomized parameters\\
+                            according to their uncertainty
+        bLum        :   boolean switch between returning cumulative number function or total 
+                        luminosity. Since these are negative power laws, we modify input slope
+                        by -1
+        """
+
+        if not bRand:
+            par = ( xu.norm2, xu.bre, xu.cut, xu.alph1, xu.alph2 )
+        else:
+            par = ( self.par_rand(xu.norm2,xu.sig_norm2), 
+                    self.par_rand(xu.bre, xu.sig_bre), 
+                    self.par_rand(xu.cut, xu.sig_cut), 
+                    self.par_rand(xu.alph1, xu.sig_alph1), 
+                    self.par_rand(xu.alph2, xu.sig_alph2) )
+        
+        if bLum:
+            par = list(par)
+            par[4] = par[4] - 1
+            par[5] = par[5] - 1
+            par = tuple(par)
+
+        arr = self.vec_calc_BPL(self.lumarr/1.e38, *par)
+
+        return arr * Mstar
+
+    def Lehmer20(self, Mstar: float = 1, Sn: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+        pass
+
 class HMXB(XRB):
     def __init__(self, nchan: int = 10000, Lmin: float = 34, Lmax: float = 41, Emin: float = 0.05, Emax: float = 50.1) -> None:
         """
@@ -412,11 +448,40 @@ class HMXB(XRB):
 
         return arr * SFR
 
-        
+    def Lehmer19(self, SFR: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+        """
+        Single PL model parameters for HMXB LF of Lehmer+19
+        returns array of either number of HMXBs > L or total luminosity of HMXBs > L
+        -----
+        SFR         :   model scaling, as host-galaxy's star formation rate
+                        in units of Msun/yr
+        bLum        :   boolean switch between returning cumulative number function or total 
+                        luminosity. Since these are negative power laws, we modify input slope
+                        by -1
+        bRand       :   boolean switching between randomized parameters\\
+                        according to their uncertainty. Does not randomize 
+                        logOH12 as it is an external scaling parameter
+        """
+
+        if not bRand:
+            par = ( xu.norm3, xu.cut, xu.gam )
+        else:
+            par = ( self.par_rand(xu.norm3,xu.sig_norm3), 
+                    self.par_rand(xu.cut, xu.sig_cut),
+                    self.par_rand(xu.gam, xu.sig_gam) )
+
+        if bLum:
+            par = list(par)
+            par[3] = par[3] - 1
+            par = tuple(par)
+
+        arr = self.vec_calc_SPL(self.lumarr/1.e38,*par)
+
+        return arr * SFR
     
     def Lehmer21(self, logOH12: float = 8.69, SFR: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
-        Initializes model parameters for HMXB LFs of Mineo+12 single PL
+        Initializes model parameters for HMXB LFs of Lehmer+21 BPL with met. dependent exp cutoff
         returns array of either number of HMXBs > L or total luminosity of HMXBs > L
         -----
         logOH12     :   metallicity measure, used to scale model parameters
