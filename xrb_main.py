@@ -1,6 +1,5 @@
 import numpy as np
 from numba import njit
-from numpy.core.fromnumeric import size
 from scipy.special import gammaincc, gamma
 import xrb_units as xu
 
@@ -115,15 +114,17 @@ class XRB:
         SFR         :   Star-Formation-Rate in units of Msun/yr\\
                         Used for rescaling of normalization
         """
-        
-        return xi/(gamma-1.)*((lum_in)**(1.-gamma)-(Lcut)**(1.-gamma))
+        if lum_in < Lcut:
+            return xi/(gamma-1.)*((lum_in)**(1.-gamma)-(Lcut)**(1.-gamma))
+        else:
+            return 0
 
     def calc_BPL(self, lum_in: float,
                       xi: float, Lb1: float, Lcut: float,
                       gamma1: float, gamma2: float ) -> float:
         """
         Analytic solution of broken Power-Law integral for luminosity functions\\
-        Used for vectorization in model_Nhxb(). 
+        Used for vectorization.
         -----
         lum_in      :   input luminosity in units of 1.e38 erg/s
         xi          :   normalization constant
@@ -139,6 +140,27 @@ class XRB:
 
         elif (lum_in >= Lb1) and (lum_in < Lcut):
             return xi * Lb1**(gamma2-gamma1)*(lum_in**(1.-gamma2) - Lcut**(1.-gamma2)) / (gamma2-1.)
+        
+        else:
+            return 0
+
+    def calc_expSPL(self, lum_in: float,
+                          norm: float, gamma: float, cut: float ) -> float:
+        """
+        Analytic solution of single Power-Law integral for luminosity functions with exponential
+        cutoff. Used for vectorization. 
+        -----
+        lum_in      :   input luminosity in units of 1.e38 erg/s
+        norm        :   normalization constant
+        gamma       :   Power-Law slope
+        cut         :   Luminosity cut-off in 1.e38 erg/s
+        """
+
+        slope   = 1 - gamma
+        pre     = cut**slope
+        end     = 10**(self.Lmax-38)
+
+        return norm * pre * ( GammaIncc(slope,lum_in/cut) - GammaIncc(slope,end/cut) )
 
     def calc_Lehmer21(self, lum_in: float,
                       A: float, logLb: float, logLc: float, logLc_logZ: float,
@@ -286,9 +308,50 @@ class LMXB(XRB):
         Additionally initializes vectorized functions of underlying models
         """
         super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
-        self.vec_calc_SPL = np.vectorize(super().calc_SPL)
-        self.vec_calc_BPL = np.vectorize(super().calc_BPL)
-        self.vec_calc_Zhang12 = np.vectorize(super().calc_Zhang12)
+        self.vec_calc_SPL       = np.vectorize(super().calc_SPL)
+        self.vec_calc_BPL       = np.vectorize(super().calc_BPL)
+        self.vec_calc_expSPL    = np.vectorize(super().calc_expSPL)
+        self.vec_calc_Zhang12   = np.vectorize(super().calc_Zhang12)
+
+    def Gilfanov04(self, Mstar: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+        """
+        Initializes model parameters for LMXB LFs of Gilfanov04
+        returns array of either number of LMXBs > L or total luminosity
+        -----
+        Mstar       :   model scaling, as host-galaxy's stellar mass in units of 1.e11
+        bRand       :   boolean switching between randomized parameters\\
+                            according to their uncertainty
+        bLum        :   boolean switch between returning cumulative number function or total 
+                        luminosity. Since these are negative power laws, we modify input slope
+                        by -1
+        """
+
+        if Mstar < 0.:
+            raise ValueError("Mstar can not be smaller than zero")
+
+        if not bRand:
+            par = ( xu.normG, xu.Lb1G, xu.Lb2G, xu.LcutG, xu.a1G, xu.a2G, xu.a3G )
+        else:
+            par = ( self.par_rand(xu.norm1,xu.sig_K1),
+                    self.par_rand(xu.Lb1,xu.sig_Lb1), 
+                    self.par_rand(xu.Lb2,xu.sig_Lb2), 
+                    xu.Lcut_L, # has no uncertainty given in Zhang+12
+                    self.par_rand(xu.alpha1,xu.sig_a1), 
+                    self.par_rand(xu.alpha2,xu.sig_a2), 
+                    self.par_rand(xu.alpha3,xu.sig_a3)
+                  )
+
+        if bLum:
+            par = list(par)
+            par[5] -= 1
+            par[6] -= 1
+            par[7] -= 1
+            par = tuple(par)
+        
+        arr = self.vec_calc_Zhang12(self.lumarr/1.e38, *par)
+
+        return arr * Mstar
+
 
     def Zhang12(self, Mstar: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
@@ -342,7 +405,7 @@ class LMXB(XRB):
     def Lehmer19(self, Mstar: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
         Initializes model parameters for Lehmer+19 LMXB LFs based on BPL
-        returns array of either number of HMXBs > L or total luminosity of HMXBs > L
+        returns array of either number of LMXBs > L or total luminosity of HMXBs > L
         -----
         Mstar       :   model scaling, as host-galaxy's stellar mass in units of 1.e11
         bRand       :   boolean switching between randomized parameters\\
@@ -351,6 +414,9 @@ class LMXB(XRB):
                         luminosity. Since these are negative power laws, we modify input slope
                         by -1
         """
+
+        if Mstar < 0.:
+            raise ValueError("Mstar can not be smaller than zero")
 
         if not bRand:
             par = ( xu.norm2, xu.bre, xu.cut, xu.alph1, xu.alph2 )
@@ -372,7 +438,49 @@ class LMXB(XRB):
         return arr * Mstar
 
     def Lehmer20(self, Mstar: float = 1, Sn: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
-        pass
+        """
+        Initializes model parameters for Lehmer+20 LMXB LFs based on BPL and exponential GC seeding
+        returns array of either number of HMXBs > L or total luminosity of HMXBs > L
+        Combination of in-situ LMXBs and GC seeded (col 4 and 5 in table 8 of Lehmer+20)
+        -----
+        Mstar       :   model scaling, as host-galaxy's stellar mass in units of 1.e11
+        Sn          :   Specific frequency of globular clusters in galaxy
+        bRand       :   boolean switching between randomized parameters\\
+                            according to their uncertainty
+        bLum        :   boolean switch between returning cumulative number function or total 
+                        luminosity. Since these are negative power laws, we modify input slope
+                        by -1
+        """
+
+        if Mstar < 0.:
+            raise ValueError("Mstar can not be smaller than zero")
+
+        if not bRand:
+            par_field = (xu.K_field, xu.Lb_field, xu.cut_field, xu.a1_field, xu.a2_field)
+            par_seed  = (xu.K_seed, xu.gamma_seed, xu.cut_seed)
+            par_GC    = (xu.K_GC, xu.gamma_GC, xu.cut_GC)
+        else:
+            par_field = (xu.K_field, xu.Lb_field, xu.cut_field, xu.a1_field, xu.a2_field)
+            par_seed  = (xu.K_seed, xu.gamma_seed, xu.cut_seed)
+            par_GC    = (xu.K_GC, xu.gamma_GC, xu.cut_GC)
+
+        if bLum:
+            par_field = list(par_field)
+            par_seed  = list(par_seed)
+            par_GC    = list(par_GC)
+            par_field[4] = par_field[4] - 1
+            par_field[5] = par_field[5] - 1
+            par_seed[1] = par_seed[1] - 1
+            par_GC[1] = par_GC[1] - 1
+            par_field = tuple(par_field)
+            par_seed  = tuple(par_seed)
+            par_GC    = tuple(par_GC)
+
+        arr1 = self.vec_calc_BPL(self.lumarr/1.e38, *par_field) 
+        arr2 = self.vec_calc_expSPL(self.lumarr/1.e38, *par_seed) 
+        arr3 = self.vec_calc_expSPL(self.lumarr/1.e38, *par_GC)
+
+        return Mstar * ( arr1 + Sn * (arr2 + arr3) )
 
 class HMXB(XRB):
     def __init__(self, nchan: int = 10000, Lmin: float = 34, Lmax: float = 41, Emin: float = 0.05, Emax: float = 50.1) -> None:
@@ -383,6 +491,39 @@ class HMXB(XRB):
         self.vec_calc_SPL = np.vectorize(super().calc_SPL)
         self.vec_calc_BPL = np.vectorize(super().calc_BPL)
         self.vec_calc_Lehmer21 = np.vectorize(super().calc_Lehmer21)
+
+    def Grimm03(self, SFR: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+        """
+        Initializes model parameters for HMXB LFs of Grimm+12 single PL
+        returns array of either number of HMXBs > L or total luminosity of HMXBs > L
+        -----
+        SFR         :   model scaling, as host-galaxy's star formation rate
+                        in units of Msun/yr
+        bRand       :   boolean switching between randomized parameters\\
+                            according to their uncertainty
+        bLum        :   boolean switch between returning cumulative number function or total 
+                        luminosity. Since these are negative power laws, we modify input slope
+                        by -1
+        """
+        if SFR < 0.:
+            raise ValueError("SFR can not be smaller than zero")
+
+        if not bRand:
+            par = (xu.norm_Gr, xu.Lcut_Gr, xu.gamma_Gr)
+        else:
+            par = ( 10**self.par_rand(xu.log_xi_s, xu.log_sig_xi_s), 
+                    xu.Lcut_Hs,
+                    self.par_rand(xu.gamma_s,xu.sig_gam_s)
+                  )
+        
+        if bLum:
+            par = list(par)
+            par[2] -= 1
+            par = tuple(par)
+
+        arr = self.vec_calc_SPL(self.lumarr/1.e38, *par)
+
+        return arr * SFR
 
     def Mineo12S(self, SFR: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
@@ -397,6 +538,10 @@ class HMXB(XRB):
                         luminosity. Since these are negative power laws, we modify input slope
                         by -1
         """
+
+        if SFR < 0.:
+            raise ValueError("SFR can not be smaller than zero")
+
         if not bRand:
             par = (xu.xi_s, xu.Lcut_Hs, xu.gamma_s)
         else:
@@ -427,6 +572,10 @@ class HMXB(XRB):
                         luminosity. Since these are negative power laws, we modify input slope
                         by -1
         """
+
+        if SFR < 0.:
+            raise ValueError("SFR can not be smaller than zero")
+
         if not bRand:
             par = (xu.xi2_b, xu.LbH ,xu.Lcut_Hb, xu.gamma1_b, xu.gamma2_b)
         else:
@@ -462,6 +611,9 @@ class HMXB(XRB):
                         logOH12 as it is an external scaling parameter
         """
 
+        if SFR < 0.:
+            raise ValueError("SFR can not be smaller than zero")
+
         if not bRand:
             par = ( xu.norm3, xu.cut, xu.gam )
         else:
@@ -494,6 +646,10 @@ class HMXB(XRB):
                         according to their uncertainty. Does not randomize 
                         logOH12 as it is an external scaling parameter
         """
+
+        if SFR < 0.:
+            raise ValueError("SFR can not be smaller than zero")
+
         if not bRand:
             par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ )
         else:
