@@ -2,6 +2,18 @@
 Constants for the XRB models
 """
 
+##--- LMXB constants, Gilfanov04 ---##
+#--- lumionosities in units of 1.e38 erg/s ---#
+
+normG                   = 440.4
+Lb1G                    = .19
+Lb2G                    = 5.
+a1G                     = 1.
+a2G                     = 1.86
+a3G                     = 4.8
+LcutG                   = 500
+
+
 ##--- LMXB constants, Zhang+2012 ---##
 
 #--- slopes with error ---#
@@ -22,9 +34,8 @@ norm1: float            = 1.01  #+-0.28; per 10^11 solar masses
 sig_K1: float           = 0.28
 
 
-
 ##--- LMXB constants, Lehmer+19 ---##
-#--- lumionosities iin units of 1.e38 erg/s ---#
+#--- lumionosities in units of 1.e38 erg/s ---#
 
 norm2: float            = 33.8
 alph1: float            = 1.28
@@ -37,6 +48,33 @@ sig_alph1: float        = 0.06
 sig_alph2: float        = 0.24
 sig_bre: float          = 0.68
 sig_cut: float          = 0.3
+
+##--- LMXB constants, Lehmer+20, combination of GC LMXBs and field (in-situ + seeded) ---##
+#--- luminositis in units of 1.e38 ---#
+
+# GC
+K_GC                    = 8.08
+gamma_GC                = 1.08
+cut_GC                  = 10**.61 #(38.61 - 38)
+
+# field (no priors)
+K_field                 = 42.4
+a1_field                = 0.98
+Lb_field                = 0.45
+a2_field                = 2.43
+cut_field               = 100
+
+K_seed                  = 5.
+gamma_seed              = 1.21
+cut_seed                = 10**.66 #(38.66-38)
+
+
+##--- HMXB constants, Grimm+03 ---##
+#--- luminosities in units of 1.e38 ---#
+
+norm_Gr                 = 3.3
+gamma_Gr                = 1.61
+Lcut_Gr                 = 240
 
 ##--- HMXB constants, Mineo+12, single power law ---##
 
