@@ -20,7 +20,12 @@ def GammaIncc(a,x):
     return res
 
 class XRB:
-    def __init__(self, nchan: int = 10000, Lmin: float = 34, Lmax: float = 41, Emin: float = 0.05, Emax: float = 50.1) -> None:
+    """
+    Class structure conatining base functions for model generation. Also contains functions for
+    model sampling and basic analysis functions. Provides the intrinsic luminosity array and
+    sampling accuracy
+    """
+    def __init__(self, nchan: int = 10000, Lmin: float = 35, Lmax: float = 41, Emin: float = 0.05, Emax: float = 50.1) -> None:
         self.nchan      = nchan
         self.Lmin       = Lmin
         self.Lmax       = Lmax
@@ -41,27 +46,6 @@ class XRB:
 
         if self.Emin < 0:
             raise ValueError("Emin can't be smaller than 0!")
-
-        # THIS WORKS !!! Sadly, too convoluted. Simpler is to instanciate subclasses of 
-        # XRB with model functions returning the complete model array
-        # 
-        # self.modelsL = {
-        #     "Zh12"  : self.Zhang12,
-        #     "0"     : self.Zhang12,
-        #     0       : self.Zhang12
-        # }
-        
-        # self.modelsH = {
-        #     "Mi12S" : self.Mineo12S,
-        #     "0"     : self.Mineo12S,
-        #     0       : self.Mineo12S,
-        #     "Mi12B" : self.Mineo12B,
-        #     "1"     : self.Mineo12B,
-        #     1       : self.Mineo12B,
-        #     "Le21"  : self.Lehmer21,
-        #     "2"     : self.Lehmer21,
-        #     2       : self.Lehmer21,
-        # }
     
     def calc_Zhang12(self, 
                   lum_in: float, K1: float, 
@@ -210,7 +194,8 @@ class XRB:
         else:
             return A * pre2 * ( GammaIncc(slope2,lum_in/LcZ) - GammaIncc(slope2,end/LcZ))
 
-    def Knorm(self, K: float, L1: float, L2: float, alpha: float) -> float:
+    @staticmethod
+    def Knorm(K: float, L1: float, L2: float, alpha: float) -> float:
         """
         Calculates normalization for changing slopes
         -----
@@ -221,13 +206,15 @@ class XRB:
         """
         return ( K * ( L1 / L2 )**alpha )
 
+    @staticmethod
     def par_rand(self, mu, sigma, size=None) -> float:
         """
         Randomizes input parameters of models in subclasses LMXB and HMXB
         """
         return np.random.normal(mu,sigma,size)
 
-    def calc_pCDF(self, inp: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def calc_pCDF(inp: np.ndarray) -> np.ndarray:
         """
         Calculates pseudo CDF from model input
         -----
@@ -241,12 +228,12 @@ class XRB:
                 pCDF.append( 1 - a/inp[0] )
             return pCDF
 
-    def sample(self, inp: np.ndarray, NXRB: int) -> np.ndarray:
-        if len(inp) != len(self.lumarr):
+    def sample(self, NXRB: int) -> np.ndarray:
+        if len(self.model()) != len(self.lumarr):
             # should not happen if inp is generated in the scope of XRB()
             raise IndexError("Input array is not the same length as intrinsic luminosity")
 
-        inpCDF = self.calc_pCDF(inp)
+        inpCDF = self.calc_pCDF(self.model())
         
         return self._sample(LumArr=self.lumarr,CDF=inpCDF,N=NXRB)
 
@@ -280,7 +267,8 @@ class XRB:
             lum[ii] = LumArr[jj-1]+(LumArr[jj]-LumArr[jj-1])*(ranvec[ii]-CDF[jj-1])/(CDF[jj]-CDF[jj-1])
         return lum
 
-    def count(self, samp: np.ndarray, lim: float) -> int:
+    @staticmethod
+    def count(samp: np.ndarray, lim: float) -> int:
         """
         Counts the number of XRBs with a luminosity greater than a certain value 'lim' from
         the given sample
@@ -291,7 +279,8 @@ class XRB:
         m = (samp >= lim)
         return len(samp[m])
     
-    def lum_sum(self, samp: np.ndarray, lim: float = 1.e35) -> float:
+    @staticmethod
+    def lum_sum(samp: np.ndarray, lim: float = 1.e35) -> float:
         """
         Sums luminosities of XRBs in sample which have individual luminosities greater than 'lim'
         -----
@@ -301,19 +290,28 @@ class XRB:
         m = (samp >= lim)
         return np.sum(samp[m])
 
-class LMXB(XRB):
-    
-    def __init__(self, nchan: int = 10000, Lmin: float = 34, Lmax: float = 41, Emin: float = 0.05, Emax: float = 50.1) -> None:
-        """
-        Additionally initializes vectorized functions of underlying models
-        """
-        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
-        self.vec_calc_SPL       = np.vectorize(super().calc_SPL)
-        self.vec_calc_BPL       = np.vectorize(super().calc_BPL)
-        self.vec_calc_expSPL    = np.vectorize(super().calc_expSPL)
-        self.vec_calc_Zhang12   = np.vectorize(super().calc_Zhang12)
 
-    def Gilfanov04(self, Mstar: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+class Gilfanov04(XRB):
+
+    normG                   = 440.4
+    Lb1G                    = .19
+    Lb2G                    = 5.
+    a1G                     = 1.
+    a2G                     = 1.86
+    a3G                     = 4.8
+    LcutG                   = 500
+
+    def __init__(self, 
+                 nchan: int = 10000, Lmin: float = 35, Lmax: float = 41, 
+                 Emin: float = 0.05, Emax: float = 50.1, 
+                 Mstar: float = 1.) -> None:
+        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        if Mstar < 0:
+            raise ValueError("Mstar can't be smaller than 0")
+        self.Mstar = Mstar
+        self.vec_calc_BPL = np.vectorize(super().calc_Zhang12)
+
+    def model(self, bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
         Initializes model parameters for LMXB LFs of Gilfanov04
         returns array of either number of LMXBs > L or total luminosity
@@ -326,20 +324,10 @@ class LMXB(XRB):
                         by -1
         """
 
-        if Mstar < 0.:
-            raise ValueError("Mstar can not be smaller than zero")
-
         if not bRand:
-            par = ( xu.normG, xu.Lb1G, xu.Lb2G, xu.LcutG, xu.a1G, xu.a2G, xu.a3G )
+            par = ( self.normG, self.Lb1G, self.Lb2G, self.LcutG, self.a1G, self.a2G, self.a3G )
         else:
-            par = ( self.par_rand(xu.norm1,xu.sig_K1),
-                    self.par_rand(xu.Lb1,xu.sig_Lb1), 
-                    self.par_rand(xu.Lb2,xu.sig_Lb2), 
-                    xu.Lcut_L, # has no uncertainty given in Zhang+12
-                    self.par_rand(xu.alpha1,xu.sig_a1), 
-                    self.par_rand(xu.alpha2,xu.sig_a2), 
-                    self.par_rand(xu.alpha3,xu.sig_a3)
-                  )
+            par = ( self.normG, self.Lb1G, self.Lb2G, self.LcutG, self.a1G, self.a2G, self.a3G )
 
         if bLum:
             par = list(par)
@@ -350,10 +338,38 @@ class LMXB(XRB):
         
         arr = self.vec_calc_Zhang12(self.lumarr/1.e38, *par)
 
-        return arr * Mstar
+        return arr * self.Mstar
 
+class Zhang12(XRB):
 
-    def Zhang12(self, Mstar: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+    #--- slopes with error ---#
+    alpha1: float           = 1.02  #+0.07 -0.08
+    alpha2: float           = 2.06  #+0.06 -0.05
+    alpha3: float           = 3.63  #+0.67 -0.49
+    sig_a1: float           = 0.075
+    sig_a2: float           = 0.055
+    sig_a3: float           = 0.58
+    #--- luminosity breaks in units of 1.e36 erg/s---#
+    Lb1: float              = 54.6  #+4.3 -3.7
+    Lb2: float              = 599.  #+95 -67
+    Lcut_L: float           = 5.e4
+    sig_Lb1: float          = 4.e-2
+    sig_Lb2: float          = (95+67)/2
+    #--- normalization in units of 1.e11 Msol ---#
+    norm1: float            = 1.01  #+-0.28; per 10^11 solar masses
+    sig_K1: float           = 0.28
+
+    def __init__(self, 
+                 nchan: int = 10000, Lmin: float = 35, Lmax: float = 41, 
+                 Emin: float = 0.05, Emax: float = 50.1, 
+                 Mstar: float = 1.) -> None:
+        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        if Mstar < 0:
+            raise ValueError("Mstar can't be smaller than 0")
+        self.Mstar = Mstar
+        self.vec_calc_BPL = np.vectorize(super().calc_Zhang12)
+
+    def model(self, bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
         Initializes model parameters for LMXB LFs of Zhang+12
         returns array of either number of LMXBs > L or total luminosity
@@ -376,19 +392,17 @@ class LMXB(XRB):
         par         :   tuple of parameters loaded from xrb_units.py
         arr         :   return array
         """
-        if Mstar < 0.:
-            raise ValueError("Mstar can not be smaller than zero")
-
+    
         if not bRand:
-            par = (xu.norm1, xu.Lb1, xu.Lb2, xu.Lcut_L, xu.alpha1, xu.alpha2, xu.alpha3)
+            par = (self.norm1, self.Lb1, self.Lb2, self.Lcut_L, self.alpha1, self.alpha2, self.alpha3)
         else:
-            par = ( self.par_rand(xu.norm1,xu.sig_K1),
-                    self.par_rand(xu.Lb1,xu.sig_Lb1), 
-                    self.par_rand(xu.Lb2,xu.sig_Lb2), 
-                    xu.Lcut_L, # has no uncertainty given in Zhang+12
-                    self.par_rand(xu.alpha1,xu.sig_a1), 
-                    self.par_rand(xu.alpha2,xu.sig_a2), 
-                    self.par_rand(xu.alpha3,xu.sig_a3)
+            par = ( self.par_rand(self.norm1, self.sig_K1),
+                    self.par_rand(self.Lb1, self.sig_Lb1), 
+                    self.par_rand(self.Lb2, self.sig_Lb2), 
+                    self.Lcut_L, # has no uncertainty given in Zhang+12
+                    self.par_rand(self.alpha1, self.sig_a1), 
+                    self.par_rand(self.alpha2, self.sig_a2), 
+                    self.par_rand(self.alpha3, self.sig_a3)
                   )
 
         if bLum:
@@ -400,9 +414,33 @@ class LMXB(XRB):
         
         arr = self.vec_calc_Zhang12(self.lumarr/1.e36, *par)
 
-        return arr * Mstar
+        return arr * self.Mstar
 
-    def Lehmer19(self, Mstar: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+class Lehmer19L(XRB):
+
+    norm2: float            = 33.8
+    alph1: float            = 1.28
+    alph2: float            = 2.33
+    bre: float              = 1.48
+    cut: float              = 10**2.7 # (40.7 -38)
+
+    sig_norm2: float        = 5.
+    sig_alph1: float        = 0.06
+    sig_alph2: float        = 0.24
+    sig_bre: float          = 0.68
+    sig_cut: float          = 0.3
+
+    def __init__(self, 
+                 nchan: int = 10000, Lmin: float = 35, Lmax: float = 41, 
+                 Emin: float = 0.05, Emax: float = 50.1, 
+                 Mstar: float = 1.) -> None:
+        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        if Mstar < 0:
+            raise ValueError("Mstar can't be smaller than 0")
+        self.Mstar = Mstar
+        self.vec_calc_BPL = np.vectorize(super().calc_BPL)
+        
+    def model(self, bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
         Initializes model parameters for Lehmer+19 LMXB LFs based on BPL
         returns array of either number of LMXBs > L or total luminosity of HMXBs > L
@@ -414,18 +452,14 @@ class LMXB(XRB):
                         luminosity. Since these are negative power laws, we modify input slope
                         by -1
         """
-
-        if Mstar < 0.:
-            raise ValueError("Mstar can not be smaller than zero")
-
         if not bRand:
-            par = ( xu.norm2, xu.bre, xu.cut, xu.alph1, xu.alph2 )
+            par = ( self.norm2, self.bre, self.cut, self.alph1, self.alph2 )
         else:
-            par = ( self.par_rand(xu.norm2,xu.sig_norm2), 
-                    self.par_rand(xu.bre, xu.sig_bre), 
-                    self.par_rand(xu.cut, xu.sig_cut), 
-                    self.par_rand(xu.alph1, xu.sig_alph1), 
-                    self.par_rand(xu.alph2, xu.sig_alph2) )
+            par = ( self.par_rand(self.norm2, self.sig_norm2), 
+                    self.par_rand(self.bre, self.sig_bre), 
+                    self.par_rand(self.cut, self.sig_cut), 
+                    self.par_rand(self.alph1, self.sig_alph1), 
+                    self.par_rand(self.alph2, self.sig_alph2) )
         
         if bLum:
             par = list(par)
@@ -435,9 +469,41 @@ class LMXB(XRB):
 
         arr = self.vec_calc_BPL(self.lumarr/1.e38, *par)
 
-        return arr * Mstar
+        return arr * self.Mstar
 
-    def Lehmer20(self, Mstar: float = 1, Sn: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+class Lehmer20(XRB):
+
+    # GC
+    K_GC                    = 8.08
+    gamma_GC                = 1.08
+    cut_GC                  = 10**.61 #(38.61 - 38)
+
+    # field (no priors)
+    K_field                 = 42.4
+    a1_field                = 0.98
+    Lb_field                = 0.45
+    a2_field                = 2.43
+    cut_field               = 100
+
+    K_seed                  = 5.
+    gamma_seed              = 1.21
+    cut_seed                = 10**.66 #(38.66-38)
+
+    def __init__(self, 
+                 nchan: int = 10000, Lmin: float = 35, Lmax: float = 41, 
+                 Emin: float = 0.05, Emax: float = 50.1, 
+                 Mstar: float = 1., Sn: float = 1.) -> None:
+        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        if Mstar < 0:
+            raise ValueError("Mstar can't be smaller than 0")
+        self.Mstar = Mstar
+        if Sn < 0:
+            raise ValueError("Sn can't be smaller than 0")
+        self.Sn = Sn
+        self.vec_calc_BPL       = np.vectorize(super().calc_BPL)
+        self.vec_calc_expSPL    = np.vectorize(super().calc_expSPL)
+
+    def model(self, bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
         Initializes model parameters for Lehmer+20 LMXB LFs based on BPL and exponential GC seeding
         returns array of either number of HMXBs > L or total luminosity of HMXBs > L
@@ -451,18 +517,14 @@ class LMXB(XRB):
                         luminosity. Since these are negative power laws, we modify input slope
                         by -1
         """
-
-        if Mstar < 0.:
-            raise ValueError("Mstar can not be smaller than zero")
-
         if not bRand:
-            par_field = (xu.K_field, xu.Lb_field, xu.cut_field, xu.a1_field, xu.a2_field)
-            par_seed  = (xu.K_seed, xu.gamma_seed, xu.cut_seed)
-            par_GC    = (xu.K_GC, xu.gamma_GC, xu.cut_GC)
+            par_field = (self.K_field, self.Lb_field, self.cut_field, self.a1_field, self.a2_field)
+            par_seed  = (self.K_seed, self.gamma_seed, self.cut_seed)
+            par_GC    = (self.K_GC, self.gamma_GC, self.cut_GC)
         else:
-            par_field = (xu.K_field, xu.Lb_field, xu.cut_field, xu.a1_field, xu.a2_field)
-            par_seed  = (xu.K_seed, xu.gamma_seed, xu.cut_seed)
-            par_GC    = (xu.K_GC, xu.gamma_GC, xu.cut_GC)
+            par_field = (self.K_field, self.Lb_field, self.cut_field, self.a1_field, self.a2_field)
+            par_seed  = (self.K_seed, self.gamma_seed, self.cut_seed)
+            par_GC    = (self.K_GC, self.gamma_GC, self.cut_GC)
 
         if bLum:
             par_field = list(par_field)
@@ -480,21 +542,27 @@ class LMXB(XRB):
         arr2 = self.vec_calc_expSPL(self.lumarr/1.e38, *par_seed) 
         arr3 = self.vec_calc_expSPL(self.lumarr/1.e38, *par_GC)
 
-        return Mstar * ( arr1 + Sn * (arr2 + arr3) )
+        return self.Mstar * ( arr1 + self.Sn * (arr2 + arr3) )
 
-class HMXB(XRB):
-    def __init__(self, nchan: int = 10000, Lmin: float = 34, Lmax: float = 41, Emin: float = 0.05, Emax: float = 50.1) -> None:
-        """
-        Additionally initializes vectorized functions of underlying models
-        """
+class Grimm03(XRB):
+
+    norm: float             = 3.3
+    gamma: float            = 1.61
+    Lcut: float             = 240
+
+    def __init__(self, 
+                 nchan: int = 10000, Lmin: float = 35, Lmax: float = 41, 
+                 Emin: float = 0.05, Emax: float = 50.1, 
+                 SFR: float = 1.) -> None:
         super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        if SFR < 0:
+            raise ValueError("SFR can't be smaller than 0")
+        self.SFR = SFR
         self.vec_calc_SPL = np.vectorize(super().calc_SPL)
-        self.vec_calc_BPL = np.vectorize(super().calc_BPL)
-        self.vec_calc_Lehmer21 = np.vectorize(super().calc_Lehmer21)
 
-    def Grimm03(self, SFR: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+    def model(self, bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
-        Initializes model parameters for HMXB LFs of Grimm+12 single PL
+        Initializes model parameters for HMXB LFs of Grimm+03 single PL
         returns array of either number of HMXBs > L or total luminosity of HMXBs > L
         -----
         SFR         :   model scaling, as host-galaxy's star formation rate
@@ -505,11 +573,8 @@ class HMXB(XRB):
                         luminosity. Since these are negative power laws, we modify input slope
                         by -1
         """
-        if SFR < 0.:
-            raise ValueError("SFR can not be smaller than zero")
-
         if not bRand:
-            par = (xu.norm_Gr, xu.Lcut_Gr, xu.gamma_Gr)
+            par = (self.norm, self.Lcut, self.gamma)
         else:
             par = ( 10**self.par_rand(xu.log_xi_s, xu.log_sig_xi_s), 
                     xu.Lcut_Hs,
@@ -525,7 +590,27 @@ class HMXB(XRB):
 
         return arr * SFR
 
-    def Mineo12S(self, SFR: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+class Mineo12S(XRB):
+
+    Lcut: float             = 1.e3  # in units of 1.e38 erg/s
+    gamma: float            = 1.59  #+-0.25 (rms, Mineo 2012)
+    xi: float               = 1.88  #*/ 10^(0.34) (rms=0.34 dex, Mineo 2012)
+
+    log_xi: float           = 0.27415 #log10
+    sig_gam: float          = 0.25
+    log_sig_xi: float       = 0.34
+
+    def __init__(self, 
+                 nchan: int = 10000, Lmin: float = 35, Lmax: float = 41, 
+                 Emin: float = 0.05, Emax: float = 50.1, 
+                 SFR: float = 1.) -> None:
+        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        if SFR < 0:
+            raise ValueError("SFR can't be smaller than 0")
+        self.SFR = SFR
+        self.vec_calc_SPL = np.vectorize(super().calc_SPL)
+
+    def model(self, bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
         Initializes model parameters for HMXB LFs of Mineo+12 single PL
         returns array of either number of HMXBs > L or total luminosity of HMXBs > L
@@ -538,16 +623,12 @@ class HMXB(XRB):
                         luminosity. Since these are negative power laws, we modify input slope
                         by -1
         """
-
-        if SFR < 0.:
-            raise ValueError("SFR can not be smaller than zero")
-
         if not bRand:
             par = (xu.xi_s, xu.Lcut_Hs, xu.gamma_s)
         else:
-            par = ( 10**self.par_rand(xu.log_xi_s, xu.log_sig_xi_s), 
-                    xu.Lcut_Hs,
-                    self.par_rand(xu.gamma_s,xu.sig_gam_s)
+            par = ( 10**self.par_rand(self.log_xi_s, self.log_sig_xi_s), 
+                    self.Lcut_Hs,
+                    self.par_rand(self.gamma_s, self.sig_gam_s)
                   )
         
         if bLum:
@@ -557,11 +638,35 @@ class HMXB(XRB):
 
         arr = self.vec_calc_SPL(self.lumarr/1.e38, *par)
 
-        return arr * SFR
+        return arr * self.SFR
 
-    def Mineo12B(self, SFR: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+class Mineo12B(XRB):
+
+    Lcut: float             = 5.e3
+    LbH: float              = 110.
+
+    gamma1: float           = 1.58
+    gamma2: float           = 2.73
+    xi2: float              = 1.49
+
+    sig_Lb: float           = (57+34)/2
+    sig_g1: float           = 0.02
+    sig_g2: float           = (1.58+0.54)/2
+    sig_xi2: float          = 0.07
+
+    def __init__(self, 
+                 nchan: int = 10000, Lmin: float = 35, Lmax: float = 41, 
+                 Emin: float = 0.05, Emax: float = 50.1, 
+                 SFR: float = 1.) -> None:
+        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        if SFR < 0:
+            raise ValueError("SFR can't be smaller than 0")
+        self.SFR = SFR
+        self.vec_calc_BPL = np.vectorize(super().calc_BPL)
+
+    def model(self, bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
-        Initializes model parameters for HMXB LFs of Mineo+12 broken PL
+        Initializes model parameters for HMXB LFs of Mineo+12 single PL
         returns array of either number of HMXBs > L or total luminosity of HMXBs > L
         -----
         SFR         :   model scaling, as host-galaxy's star formation rate
@@ -572,18 +677,14 @@ class HMXB(XRB):
                         luminosity. Since these are negative power laws, we modify input slope
                         by -1
         """
-
-        if SFR < 0.:
-            raise ValueError("SFR can not be smaller than zero")
-
         if not bRand:
-            par = (xu.xi2_b, xu.LbH ,xu.Lcut_Hb, xu.gamma1_b, xu.gamma2_b)
+            par = (self.xi2, self.LbH, self.Lcut, self.gamma1, self.gamma2)
         else:
-            par = ( self.par_rand(xu.xi2_b, xu.sig_xi2),
-                    self.par_rand(xu.LbH, xu.sig_LbH),
-                    xu.Lcut_Hb,
-                    self.par_rand(xu.gamma1_b, xu.sig_g1),
-                    self.par_rand(xu.gamma2_b, xu.sig_g2)
+            par = ( self.par_rand(self.xi2, self.sig_xi2),
+                    self.par_rand(self.LbH, self.sig_LbH),
+                    self.Lcut,
+                    self.par_rand(self.gamma1_b, self.sig_g1),
+                    self.par_rand(self.gamma2_b, self.sig_g2)
                   )
 
         if bLum:
@@ -594,89 +695,129 @@ class HMXB(XRB):
         
         arr = self.vec_calc_BPL(self.lumarr/1.e38, *par)
 
-        return arr * SFR
+        return arr * self.SFR
 
-    def Lehmer19(self, SFR: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+class Lehmer19H(XRB):
+
+    norm: float             = 1.96
+    gam: float              = 1.65
+    cut: float              = 10**2.7 # (40.7 -38)
+
+    sig_norm: float         = 0.14
+    sig_gam: float          = 0.025
+    sig_cut: float          = 0.3
+
+    def __init__(self, 
+                 nchan: int = 10000, Lmin: float = 35, Lmax: float = 41, 
+                 Emin: float = 0.05, Emax: float = 50.1, 
+                 SFR: float = 1.) -> None:
+        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        if SFR < 0:
+            raise ValueError("SFR can't be smaller than 0")
+        self.SFR = SFR
+        self.vec_calc_SPL = np.vectorize(super().calc_SPL)
+
+    def model(self, bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
-        Single PL model parameters for HMXB LF of Lehmer+19
+        Initializes model parameters for HMXB LFs of Lehmer+19 single PL
         returns array of either number of HMXBs > L or total luminosity of HMXBs > L
         -----
         SFR         :   model scaling, as host-galaxy's star formation rate
                         in units of Msun/yr
+        bRand       :   boolean switching between randomized parameters\\
+                            according to their uncertainty
         bLum        :   boolean switch between returning cumulative number function or total 
                         luminosity. Since these are negative power laws, we modify input slope
                         by -1
-        bRand       :   boolean switching between randomized parameters\\
-                        according to their uncertainty. Does not randomize 
-                        logOH12 as it is an external scaling parameter
         """
-
-        if SFR < 0.:
-            raise ValueError("SFR can not be smaller than zero")
-
         if not bRand:
-            par = ( xu.norm3, xu.cut, xu.gam )
+            par = ( self.norm, self.cut, self.gam )
         else:
-            par = ( self.par_rand(xu.norm3,xu.sig_norm3), 
-                    self.par_rand(xu.cut, xu.sig_cut),
-                    self.par_rand(xu.gam, xu.sig_gam) )
+            par = ( self.par_rand(self.norm, self.sig_norm), 
+                    self.par_rand(self.cut, self.sig_cut),
+                    self.par_rand(self.gam, self.sig_gam) )
 
         if bLum:
             par = list(par)
             par[3] = par[3] - 1
             par = tuple(par)
 
-        arr = self.vec_calc_SPL(self.lumarr/1.e38,*par)
+        arr = self.vec_calc_SPL(self.lumarr/1.e38, *par)
 
-        return arr * SFR
-    
-    def Lehmer21(self, logOH12: float = 8.69, SFR: float = 1., bRand: bool = False, bLum: bool = False) -> np.ndarray:
+        return arr * self.SFR
+
+class Lehmer21(XRB):
+
+    A_h: float              = 1.29
+    g1_h: float             = 1.74
+    g2_h: float             = 1.16
+    g2_logZ: float          = 1.34
+    logLb: float            = 38.54
+    logLc: float            = 39.98
+    logLc_logZ: float       = 0.6
+
+    sig_Ah: float           = 0.185
+    sig_g1h: float          = 0.04
+    sig_g2h: float          = 0.17
+    sig_g2logZ: float       = 0.5
+    sig_logLb: float        = 0.2
+    sig_logLc: float        = 0.24
+    sig_logLcZ: float       = 0.3
+
+    def __init__(self, 
+                 nchan: int = 10000, Lmin: float = 35, Lmax: float = 41, 
+                 Emin: float = 0.05, Emax: float = 50.1, 
+                 logOH12: float = 8.69, SFR: float = 1.) -> None:
+        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        self.logOH12 = logOH12
+        if SFR < 0:
+            raise ValueError("SFR can't be smaller than 0")
+        self.SFR = SFR
+        self.vec_calc_Lehmer21 = np.vectorize(super().calc_Lehmer21)
+
+    def model(self, bRand: bool = False, bLum: bool = False) -> np.ndarray:
         """
-        Initializes model parameters for HMXB LFs of Lehmer+21 BPL with met. dependent exp cutoff
+        Initializes model parameters for HMXB LFs of Lehmer+21
         returns array of either number of HMXBs > L or total luminosity of HMXBs > L
         -----
-        logOH12     :   metallicity measure, used to scale model parameters
-                        refers to convention '12 + log(O/H)'
         SFR         :   model scaling, as host-galaxy's star formation rate
                         in units of Msun/yr
+        bRand       :   boolean switching between randomized parameters\\
+                            according to their uncertainty
         bLum        :   boolean switch between returning cumulative number function or total 
                         luminosity. Since these are negative power laws, we modify input slope
                         by -1
-        bRand       :   boolean switching between randomized parameters\\
-                        according to their uncertainty. Does not randomize 
-                        logOH12 as it is an external scaling parameter
         """
-
-        if SFR < 0.:
-            raise ValueError("SFR can not be smaller than zero")
-
         if not bRand:
-            par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ )
+            par = ( self.A_h, self.logLb, self.logLc, self.logLc_logZ, self.g1_h, self.g2_h, self.g2_logZ )
         else:
-            par = ( self.par_rand(xu.A_h, xu.sig_Ah),
-                    self.par_rand(xu.logLb, xu.sig_logLb),
-                    self.par_rand(xu.logLc,xu.sig_logLc),
-                    self.par_rand(xu.logLc_logZ,xu.sig_logLcZ),
-                    self.par_rand(xu.g1_h,xu.sig_g1h),
-                    self.par_rand(xu.g2_h,xu.sig_g2h),
-                    self.par_rand(xu.g2_logZ,xu.sig_g2logZ)
+            par = ( self.par_rand(self.A_h, self.sig_Ah),
+                    self.par_rand(self.logLb, self.sig_logLb),
+                    self.par_rand(self.logLc, self.sig_logLc),
+                    self.par_rand(self.logLc_logZ, self.sig_logLcZ),
+                    self.par_rand(self.g1_h, self.sig_g1h),
+                    self.par_rand(self.g2_h, self.sig_g2h),
+                    self.par_rand(self.g2_logZ, self.sig_g2logZ)
                 )
 
         if bLum:
-            # par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h - 1 , xu.g2_h - 1, xu.g2_logZ )
             par = list(par)
             par[4] = par[4] - 1.
             par[5] = par[5] - 1.
             par = tuple(par)
         
-        arr = self.vec_calc_Lehmer21(self.lumarr/1.e38,*par,logOH12)
+        arr = self.vec_calc_Lehmer21( self.lumarr/1.e38, *par, self.logOH12 )
 
-        return arr * SFR
+        return arr * self.SFR
+
 
 import itertools
 
 def model_err(mod: np.ufunc, LumArr: np.ndarray, args: tuple, logOH12: float) -> tuple:
-
+    """
+    input args must have the form ((a,aL,au),(b,bL,bU),...) in order to retain the parameter ordering
+    for the underlying model
+    """
     comb: tuple = itertools.product(*args) # tuple of tuples
     calc = []
     for combi in comb:
@@ -694,17 +835,7 @@ def model_err(mod: np.ufunc, LumArr: np.ndarray, args: tuple, logOH12: float) ->
         errL[i] =  np.amin( [z[i] for z in calc] )
     return (errU, errL)
 
-def altZh(la,K,Lb1,Lb2,Lc,a1,a2,a3):
-    if la < Lb1:
-        res = (la**(1-a1)-Lb1**(1-a1))/(a1-1) + Lb1**(a2-a1)*(Lb1**(1-a2)-Lb2**(1-a2))/(a2-1) + Lb1**(a2-a1)*Lb2**(a3-a2)*(Lb2**(1-a3)-Lc**(1-a3))/(a3-1)
-    elif la < Lb2:
-        res = Lb1**(a2-a1)*(la**(1-a2)-Lb2**(1-a2))/(a2-1) + Lb1**(a2-a1)*Lb2**(a3-a2)*(Lb2**(1-a3)-Lc**(1-a3))/(a3-1)
-    elif la < Lc:
-        res = Lb1**(a2-a1)*Lb2**(a3-a2)*(la**(1-a3)-Lc**(1-a3))/(a3-1)
-    else:
-        res = 0
-    
-    return res * K
+
 
 
 if __name__ == "__main__":
@@ -713,31 +844,9 @@ if __name__ == "__main__":
     from matplotlib.widgets import Slider
     import time
     import helper
-    
-    blo = helper.experimental()
-    vec = np.vectorize(blo.diff_Nhxb_met)
-    par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ, 7. )
-    end = 1.e4
-    N = 200000
-     
-    bla = helper.Integrate()
-    s = time.time()
-    Nhx_arr = bla.Riemann_log(vec,10,end,N,*par)
-    ent = time.time()-s
-    print(ent,Nhx_arr)
 
 
-    hxb = HMXB(Lmin=35,Lmax=41,nchan=10000)
-    lxb = LMXB(nchan=10000)
-    vecL = np.vectorize(lxb.calc_Zhang12)
-    vecalt = np.vectorize(altZh)
-    pL = (xu.norm1*100, xu.Lb1/100, xu.Lb2/100, xu.Lcut_L/100, xu.alpha1, xu.alpha2, xu.alpha3)
-    palt = (54.48265, xu.Lb1/100, xu.Lb2/100, xu.Lcut_L/100, xu.alpha1, xu.alpha2, xu.alpha3)
-    NL = vecL(lxb.lumarr/1.e38,*pL)
-    plt.plot(lxb.lumarr,lxb.Zhang12())
-    plt.plot(lxb.lumarr,NL,ls='--')
-    plt.plot(lxb.lumarr,vecalt(lxb.lumarr/1.e38,*palt),ls='-.')
-    plt.show()
+    hxb = XRB(Lmin=35,Lmax=41,nchan=10000)
     Li = np.array([7,7.2,7.4,7.6,7.8,8.,8.2,8.4,8.6,8.8,9.,9.2])
     Lo = [4.29,4.27,3.97,3.47,2.84,2.2,1.62,1.15,0.8,0.54,0.37,0.25]
     Loerr = [[3.07,2.53,1.9,1.33,.88,.54,.31,.18,.15,.13,.11,.09],[7.63,5.09,3.26,2.01,1.19,0.68,0.37,0.21,0.17,0.17,0.16,0.15]]
@@ -749,7 +858,6 @@ if __name__ == "__main__":
     SFR = [0.01,0.1,1,10,100]
     par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ )
     N39 = np.vectorize(hxb.calc_Lehmer21)
-    foo=10**.54
 
     import tqdm
     
@@ -826,7 +934,7 @@ if __name__ == "__main__":
     linen, = plt.plot(OH, np.log10(N39(.001, *par2, logOH12=OH))+38, label='total L, analytic integration' )
     lineN = plt.errorbar(Li, Lu, yerr=Luerr, ms=8.,capsize=3.,capthick=1.,c='k',fmt='x',label='total Lum, Lehmer+21')
     ax3.set_xlabel(r'$12+\log[O/H]$',fontsize=12)
-    ax.set_ylabel(r'$L_X / \mathrm{SFR}$',fontsize=12)
+    ax3.set_ylabel(r'$\log(L_X / \mathrm{SFR})$',fontsize=12)
 
     plt.subplots_adjust(bottom=0.5,left=0.05,right=0.95,top=0.95)
 
@@ -860,46 +968,6 @@ if __name__ == "__main__":
     gz_slider.on_changed(update3)
     OH_slider.on_changed(update3)
 
-    ax.legend(fontsize=11)
+    ax3.legend(fontsize=11)
 
     plt.show()  
-
-    
-    fig2, ax2 = plt.subplots(figsize=(12,10))
-    mod, = plt.plot(hxb.lumarr, N39(hxb.lumarr/1.e38, *par, logOH12=8.69) )
-    ax2.set_xlabel(r'$L\, [erg/s]$',fontsize=12)
-    ax2.set_ylabel(r'$N(>L)$',fontsize=12)
-
-    plt.subplots_adjust(bottom=0.5,left=0.05,right=0.95,top=0.95)
-
-    axAh = plt.axes([0.1, 0.42, 0.65, 0.02])
-    axLb = plt.axes([0.1, 0.37, 0.65, 0.02])
-    axLc = plt.axes([0.1, 0.32, 0.65, 0.02])
-    axLz = plt.axes([0.1, 0.27, 0.65, 0.02])
-    axg1 = plt.axes([0.1, 0.22, 0.65, 0.02])
-    axg2 = plt.axes([0.1, 0.17, 0.65, 0.02])
-    axgz = plt.axes([0.1, 0.12, 0.65, 0.02])
-    axOH = plt.axes([0.1, 0.07, 0.65, 0.02])
-    Ah_slider = Slider(ax=axAh, label=r'$A_{HMXB}$', valmin=0.1, valmax=6, valinit=par[0])
-    Lb_slider = Slider(ax=axLb, label=r'$\log{L_b}$', valmin=37, valmax=40, valinit=par[1])
-    Lc_slider = Slider(ax=axLc, label=r'$\log{L_c}$', valmin=39, valmax=41, valinit=par[2])
-    Lz_slider = Slider(ax=axLz, label=r'$d\log{L_c}/d\log{Z}$', valmin=0.1, valmax=2, valinit=par[3])
-    g1_slider = Slider(ax=axg1, label=r'$\gamma_1$', valmin=0.1, valmax=3, valinit=par[4])
-    g2_slider = Slider(ax=axg2, label=r'$\gamma_2$', valmin=0.1, valmax=3, valinit=par[5])
-    gz_slider = Slider(ax=axgz, label=r'$d\gamma_2/d\log{Z}$', valmin=0.1, valmax=3, valinit=par[6])
-    OH_slider = Slider(ax=axOH, label=r'$OH$', valmin=6.5, valmax=10, valinit=8.69)
-
-    def update2(val):
-        mod.set_ydata(N39(hxb.lumarr/1.e38, Ah_slider.val, (Lb_slider.val), Lc_slider.val, Lz_slider.val, g1_slider.val, g2_slider.val, gz_slider.val, OH_slider.val))
-        fig2.canvas.draw_idle()
-
-    Ah_slider.on_changed(update2)
-    Lb_slider.on_changed(update2)
-    Lc_slider.on_changed(update2)
-    Lz_slider.on_changed(update2)
-    g1_slider.on_changed(update2)
-    g2_slider.on_changed(update2)
-    gz_slider.on_changed(update2)
-    OH_slider.on_changed(update2)
-
-    plt.show()
