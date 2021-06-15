@@ -139,7 +139,23 @@ class Galaxy(Magneticum):
 
     def add_luminosities(self):
         pass
-
-
-
     
+    @classmethod
+    def gal_dict_from_json(cls, json_obj):
+        gal_dict = {key: cls(**json_obj[key]) for key in json_obj.keys()}
+        return gal_dict
+
+
+class ComplexEncoder(json.JSONEncoder):
+    def default(self, obj) -> dict:
+        if isinstance(obj, Galaxy):
+            obj_dict = {key: str(obj.__dict__[key]) for key in obj.__dict__}
+            return obj_dict
+        return json.JSONEncoder.default(self, obj)
+    
+if __name__ == "__main__":
+    d = {"1": {"FSUB": 1, "SFR": 333}, "2": {"FSUB": 2, "Mstar": 23, "Xph_gas": [1,2,3]}}
+    x = Galaxy.gal_dict_from_json(d)
+    print(x)
+
+    print(json.dumps({"1": Galaxy(1)}, cls=ComplexEncoder))
