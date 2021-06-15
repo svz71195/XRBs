@@ -751,10 +751,10 @@ class Lehmer21(XRB):
     A_h: float              = 1.29
     g1_h: float             = 1.74
     g2_h: float             = 1.16
-    g2_logZ: float          = 1.34
+    g2_logZ: float          = 1.215 # actually 1.34, tweaked to better reflect skewness of parameter
     logLb: float            = 38.54
     logLc: float            = 39.98
-    logLc_logZ: float       = 0.6
+    logLc_logZ: float       = 0.51 # actually 0.6, tweaked to better reflect skewness of parameter
 
     sig_Ah: float           = 0.185
     sig_g1h: float          = 0.04
@@ -856,7 +856,7 @@ if __name__ == "__main__":
     Luerr = [[.66,.5,.38,.28,.2,.15,.11,.09,.1,.12,.13,.12],[.69,.53,.4,.29,.21,.15,.12,.1,.11,.13,.15,.16]]
     OH = np.linspace(7,9.2,12)
     SFR = [0.01,0.1,1,10,100]
-    par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h, xu.g2_h, xu.g2_logZ )
+    par = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ-0.09, xu.g1_h, xu.g2_h, xu.g2_logZ-.125 )
     N39 = np.vectorize(hxb.calc_Lehmer21)
 
     import tqdm
@@ -929,7 +929,7 @@ if __name__ == "__main__":
 
     plt.show()  
 
-    par2 = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ, xu.g1_h-1, xu.g2_h-1, xu.g2_logZ )
+    par2 = ( xu.A_h, xu.logLb, xu.logLc, xu.logLc_logZ-.09, xu.g1_h-1, xu.g2_h-1, xu.g2_logZ-.125 )
     fig3, ax3 = plt.subplots(figsize=(12,10))
     linen, = plt.plot(OH, np.log10(N39(.001, *par2, logOH12=OH))+38, label='total L, analytic integration' )
     lineN = plt.errorbar(Li, Lu, yerr=Luerr, ms=8.,capsize=3.,capthick=1.,c='k',fmt='x',label='total Lum, Lehmer+21')
