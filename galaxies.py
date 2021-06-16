@@ -11,8 +11,9 @@ except ImportError:
     has_tqdm: bool = False
 try:
     import g3read as g3
+    import g3matcha as matcha
 except ImportError:
-    print("Could not import g3read. Please check if it is installed.\n It can be found at https://github.com/aragagnin/g3read")
+    exit("Could not import g3read. Please check if it is installed.\n It can be found at https://github.com/aragagnin/g3read")
 
 try: 
     from astropy.io import fits
@@ -27,14 +28,38 @@ class Magneticum:
     Collection of methods to retrieve data from Magneticum snapshots and subfind data.
     Requires python module 'g3read' from Antonio!!! You can find g3read at https://github.com/aragagnin/g3read 
     """
+    
     @staticmethod
-    def halo_GRNR( groupbase, FSUB ):
-        temp0 = g3.read_new(groupbase+".0", "GRNR", 1)
-        temp1 = g3.read_new(groupbase+".1", "GRNR", 1)
-        temp2 = g3.read_new(groupbase+".2", "GRNR", 1)
-        temp3 = g3.read_new(groupbase+".3", "GRNR", 1)
-        temp4 = g3.read_new(groupbase+".4", "GRNR", 1)
-        return np.concatenate(temp0,temp1,temp2,temp3,temp4)[FSUB]
+    def get_halo_data( groupbase: str, GRNR: int ) -> tuple:
+        """
+        returns tuple (center, Mstar, SFR, Mvir, Rvir, R25K, SZ) from group GRNR
+        """
+        for halo in matcha.yield_haloes( groupbase, with_ids=True, ihalo_start=GRNR, ihalo_end=GRNR, blocks=('GPOS','MSTR','R25K','MVIR','RVIR') ):
+            halo_center = halo["GPOS"]
+            halo_Mstar = halo["MSTR"] # stellar mass within R25K
+            halo_R25K = halo["R25K"]
+            halo_Mvir = halo["MVIR"]
+            halo_Rvir = halo["RVIR"]
+
+            for subhalo in matcha.yield_subhaloes( groupbase, with_ids=True, halo_ids=halo['ids'], halo_goff=halo['GOFF'], ihalo=halo['ihalo'], blocks=('SSFR','SZ  ') ):
+                subhalo_SFR = subhalo["SSFR"]
+                subhalo_SZ = subhalo["SZ  "]
+                break
+
+        return (halo_center, halo_Mstar, subhalo_SFR, halo_Mvir, halo_Rvir, halo_R25K, subhalo_SZ)
+
+    @staticmethod
+    def get_halo_GRNR( groupbase, FSUB ):
+        halo_NSUB = np.array([])
+        for k in range(16):
+            halo_NSUB = np.append( halo_NSUB, g3.read_new(groupbase+"."+str(k), "NSUB", 0, is_snap=False) )
+            if FSUB < np.sum(halo_NSUB):
+                break
+        j = 0
+        while ( np.sum(halo_NSUB[:j+1])-FSUB < 0 ):
+            j = j+1
+        return j
+
 
         
 
@@ -49,9 +74,10 @@ class Galaxy(Magneticum):
     ##--- Derived from subfind catalogue ---##
     FSUB: int
     GRNR: int               = 0
-    center: list[float]     = field(default_factory=list)
+    center: np.ndarray      = np.zeros(3)
     Mstar: float            = 1.    
     SFR: float              = 1.
+    Mvir: float             = 1.
     Rvir: float             = 1.
     R25K: float             = 1.
     sZ: float               = 1.
@@ -63,96 +89,121 @@ class Galaxy(Magneticum):
     bVal: float             = 1.
     
     ##--- Derived from PHOX .fits files
-    Xph_tot: list[float]    = field(default_factory=list)
-    Xph_agn: list[float]    = field(default_factory=list)
-    Xph_gas: list[float]    = field(default_factory=list)
-    Xph_xrb: list[float]    = field(default_factory=list)
+    Xph_tot: np.ndarray     = np.zeros(10)
+    Xph_agn: np.ndarray     = np.zeros(10)
+    Xph_gas: np.ndarray     = np.zeros(10)
+    Xph_xrb: np.ndarray     = np.zeros(10)
 
     ##--- Derived from which Magneticum Box ---##
-    box: str                = "Box4/uhr_test"
+    groupbase: str          = "./Box4/uhr_test/groups_136/sub_136"
+    snapbase: str           = "./Box4/uhr_test/snapdir_136/snap_136"
+    Xph_base: str            = "./fits_136/"
 
     @property
     def sFSUB(self):
         return str(self.FSUB)
 
-    def load(self, groupbase: str, snapbase: str, ph_base: str = None):
+    @property
+    def load(self):
         """
         Uses built in functions to populate __init__ fields with data based on FSUB
         """
-        if ph_base is None:
-            raise Warning("No argument passed for 'ph_base'. If this is deliberate, ignore this warning...")
+
+        if not isinstance(self.groupbase, str):
+            raise TypeError("'groupbase' was not set properly. Make sure that 'groupbase' is a valid path to halo catalogues ...")
+
+        if not isinstance(self.snapbase, str):
+            raise TypeError("'snapbase' was not set properly. Make sure that 'snapbase' is a valid path to snapshot files ...")
+
+        if not isinstance(self.Xph_base, str):
+            raise Warning("'Xph_base' was not set properly. Make sure that 'Xph_base' is a valid path to X-ray fits files produced with PHOX.\n If this is deliberate, ignore this warning...")
+
+
         if has_tqdm:
             with tqdm.tqdm(total=10, file=sys.stdout) as pbar:
                 
-                self.set_GRNR(groupbase)
+                self.set_GRNR
                 pbar.update(1)
 
-                self.set_center(groupbase)
-                pbar.update(1)
-                
-                self.set_Mstar(groupbase)
+                self.center, self.Mstar, self.SFR, self.Mvir, self.Rvir, self.R25K = self.get_halo_data(self.groupbase, self.GRNR)
                 pbar.update(1)
 
-                self.set_SFR(groupbase)
-                pbar.update(1)
-        
-                self.set_radii(groupbase)
+                self.set_Rshm()
                 pbar.update(1)
 
-                self.set_sZ(groupbase)
+                self.set_bVal()
                 pbar.update(1)
 
-                self.set_Rshm(groupbase)
-                pbar.update(1)
-        
                 self.set_galType()
                 pbar.update(1)
-        
-                self.set_bVal(snapbase)
-                pbar.update(1)
 
-                if isinstance(ph_base, str):
-                    self.set_Xph(ph_base)
+                if isinstance( self.Xph_base, str ):
+                    self.set_Xph( self.Xph_base )
                 pbar.update(1)
         else:
-            self.set_center()
-            self.set_Mstar()
-            self.set_SFR()  
-            self.set_radii()
-            self.set_sZ()
+            self.set_GRNR( self.groupbase, self.FSUB)
+            self.center, self.Mstar, self.SFR, self.Mvir, self.Rvir, self.R25K = self.get_halo_data(self.groupbase, self.FSUB)
             self.set_Rshm()
             self.set_galType()
             self.set_bVal()
             self.set_Xph()
 
-    def set_GRNR(self, gb: str):
-        self.GRNR = super().halo_GRNR(gb, self.FSUB)
+    def set_groupbase(self, fp: str):
+        if isinstance(fp, str):
+            self.groupbase = fp
+        else:
+            raise TypeError("Can not set groupbase to non str object")
 
-    def set_center(self, gb: str) -> None:
-        self.center = super().halo_center( gb, self.GRNR )
+    def set_snapbase(self, fp: str):
+        if isinstance(fp, str):
+            self.snapbase = fp
+        else:
+            raise TypeError("Can not set snapbase to non str object")
 
-    def set_Mstar(self, gb):
-        Marr = super().halo_Mstar( gb, self.GRNR )
-        self.Mstar = Marr[5]
+    def set_Xph_base(self, fp: str):
+        if isinstance(fp, str):
+            self.groupbase = fp
+        else:
+            raise TypeError("Can not set Xph_base to non str object")
 
-    def set_SFR(self, gb):
-        self.SFR = super().halo_SFR( gb, self.FSUB )
+    @property
+    def set_GRNR(self) -> None:
+        self.GRNR = super().get_halo_GRNR( self.groupbase, self.FSUB)
 
-    def set_radii(self, gb):
-        Rarr = super().halo_radii( gb, self.GRNR )
-        self.R25K = Rarr[5]
-        self.Rvir = Rarr[0]
+    @property
+    def set_center(self) -> None:
+        self.set_GRNR
+        self.center = super().get_halo_data( self.groupbase, self.GRNR )[0]
 
-    def set_sZ(self, gb):
-        self.sZ = super().halo_sZ( gb, self.FSUB )
+    @property
+    def set_Mstar(self) -> None:
+        self.set_GRNR
+        self.Mstar = super().get_halo_data( self.groupbase, self.GRNR )[1]
+        self.Mvir = super().get_halo_data( self.groupbase, self.GRNR )[3]
 
-    def set_Rshm(self, sb):
+    @property
+    def set_SFR(self):
+        self.set_GRNR
+        self.SFR = super().get_halo_data( self.groupbase, self.GRNR )[2]
+
+    @property
+    def set_radii(self):
+        self.set_GRNR
+        self.Rvir = super().get_halo_data( self.groupbase, self.GRNR )[4]
+        self.R25K = super().get_halo_data( self.groupbase, self.GRNR )[5]
+
+    @property
+    def set_sZ(self):
+        self.set_GRNR
+        self.sZ = super().get_halo_data( self.groupbase, self.GRNR )[6]
+
+    def set_Rshm(self):
+        pass
+    
+    def set_bVal(self):
         pass
 
     def set_galType(self):
-        pass
-
-    def set_bVal(self, sb):
         pass
 
     def set_Xph(self, pb):
@@ -171,6 +222,11 @@ class Galaxy(Magneticum):
     @classmethod
     def gal_dict_from_json(cls, json_obj):
         gal_dict = {key: cls(**json_obj[key]) for key in json_obj.keys()}
+        return gal_dict
+
+    @classmethod
+    def gal_dict_from_npy(cls, npy_obj):
+        gal_dict = np.load(npy_obj).item()
         return gal_dict
 
 
