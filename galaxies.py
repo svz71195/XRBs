@@ -142,9 +142,9 @@ class Magneticum:
             rr = np.linalg.norm(pos,axis=1) # length of each postition vector
             vv = np.linalg.norm(vel,axis=1) # length of each velocity vector
             range_frac = .9
-            ii = np.sqrt(np.abs(vv))
+            ii = np.argsort(np.abs(vv))
             n = len(vv)
-            vrange = np.abs( vv[ int( ii[int(range_frac*n-1)] ) ] )
+            vrange = np.abs( vv[ ii[int(range_frac*n-1)] ] )
 
             kk = (rr <= rad) & (vv <= vrange)
 
@@ -351,9 +351,11 @@ class Galaxy(Magneticum):
 
         stars = self.get_stars
         mass = self.mass_to_phys(stars["MASS"])
-        pos = self.pos_to_phys(stars["POS "] - self.center)
-        rad = g3.to_spherical(pos, [0,0,0]).T[0]
+        pos = self.pos_to_phys( stars["POS "] - self.center )
         vel = self.vel_to_phys( stars["VEL "] - self.Svel )
+        k, _ = self.find_COM(pos,vel,mass,3.*self.Rshm)
+        print(k)
+        rad = g3.to_spherical(pos, [0,0,0]).T[0]
         mask = ( rad <= 3.*self.Rshm )
 
 
@@ -417,11 +419,55 @@ class Galaxy(Magneticum):
 
     def add_luminosities(self):
         stars = self.get_stars()
-        rad = g3.to_spherical( stars["POS "], self.center ).T[0]
-        iM = stars["iM  "]
-        age = self.age_part(stars["AGE "])
-        Zs = stars["Zs  "]
+        rad = self.pos_to_phys( g3.to_spherical( stars["POS "], self.center ).T[0] )
+        iM = self.mass_to_phys( stars["iM  "] )
+        Tdiff = self.age_part(stars["AGE "]) / 1.e3 # in Gyr
+        Zs = self.mass_to_phys( stars["Zs  "] )
+
+        CB07, tempiAS = self.load_CB07()
+
+        Zstar = np.sum(Zs[1:],axis=1) / (iM - np.sum(Zs,axis=1)) / .02
         
+    @staticmethod
+    def load_CB07(obs = False, num = None):
+        LT_ADD_GAL_TO_SUB = 12
+        CB07 = np.zeros(LT_ADD_GAL_TO_SUB + 218 * LT_ADD_GAL_TO_SUB + 6 * 219 * LT_ADD_GAL_TO_SUB)
+        tempiAS = 10**(np.loadtxt("/HydroSims/Projekte/Safe/CB07/tempi") - 9.) # in Gyr
+
+        if not obs:
+            for imet in range(6):
+                t = f"{imet+2:1d}"
+                CB07File='/HydroSims/Projekte/Safe/CB07/Chabrier/cb2007_hr_stelib_m'+t+'2_ssp.multi_mag_vega'
+                d = np.loadtxt(CB07File)
+                d.T
+
+                j = 0
+
+                for i in range(219):
+                    for imag in range(12):
+                        CB07[imag + (i * LT_ADD_GAL_TO_SUB) + (imet * 219 * LT_ADD_GAL_TO_SUB)] = d[j]
+                    j += 1
+        else:
+            for imet in range(6):
+                t = f"{imet+2:1d}"
+                t2 = f"{num:03d}"
+                CB07File='/HydroSims/Projekte/Safe/CB07/Chabrier/cb2007_hr_stelib_m'+t+'2_ssp.multi_mag_vega'
+                d = np.loadtxt(CB07File)
+                d.T
+
+                j = 0
+
+                for i in range(219):
+                    for imag in range(12):
+                        CB07[imag + (i * LT_ADD_GAL_TO_SUB) + (imet * 219 * LT_ADD_GAL_TO_SUB)] = d[j]
+                    j += 1
+
+        return (CB07, tempiAS)
+
+
+
+
+
     @classmethod
     def gal_dict_from_npy(cls, npy_obj):
         gal_dict = np.load(npy_obj).item()
@@ -463,3 +509,5 @@ if __name__ == "__main__":
     print(x)
     print(y)
     print(z)
+
+    x.add_luminosities()
