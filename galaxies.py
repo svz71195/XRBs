@@ -76,13 +76,47 @@ class Magneticum:
             j = j+1
         return j
 
+    # @staticmethod
+    # def get_index_list_2(halo_pid, ptype_pid):
+    #     ind_all = np.zeros_like(ptype_pid)
+    #     for i in tqdm.trange(len(ptype_pid)):
+    #         if np.any( ptype_pid[i] == halo_pid ):
+    #             ind_all[i] = 1
+    #     return ind_all
+
     @staticmethod
     def get_index_list(halo_pid, ptype_pid):
+        """
+        Match particle ids that are bound to the halo, super fast!
+        """
         ind_all = np.zeros_like(ptype_pid)
-        for i in range(len(ptype_pid)):
-            if np.any( ptype_pid[i] == halo_pid ):
-                ind_all[i] = 1
-        return ind_all
+        hid = np.sort(halo_pid)
+        pid = np.sort(ptype_pid)
+        lend = True
+        # icountall = 0
+        icountarr1 = 0
+        icountarr2 = 0
+        pbar = tqdm.tqdm(total=len(pid)-1, colour='red')
+        while lend:
+            if pid[icountarr2] == hid[icountarr1]:
+                ind_all[icountarr2] = 1
+                # icountall += 1
+                icountarr1 += 1
+                icountarr2 += 1
+                pbar.update(1)
+            else:
+                if pid[icountarr2] < hid[icountarr1]:
+                    icountarr2 += 1
+                    pbar.update(1)
+                else:
+                    icountarr1 += 1
+
+            if icountarr2 == len(pid) or icountarr1 == len(hid):
+                lend = False
+            
+        pbar.close()
+
+        return ind_all.astype(bool)
 
     @staticmethod
     def halo_gas(sb, ce, rad):
@@ -198,9 +232,13 @@ class Galaxy(Magneticum):
     
     ##--- Derived from snapshot ---##
     Rshm: float             = 1.
-    # ETG: bool               = False
-    # LTG: bool               = False
     bVal: float             = 1.
+    logOH12_s: float        = 8.69
+    logFeH_s: float         = 0.
+    Zgal_s: float           = 0.
+    logOH12_g: float        = 8.69
+    Zgal_g: float           = 0.
+    
     
     ##--- Derived from PHOX .fits files
     Xph_agn: dict           = field(default_factory=dict)
@@ -276,6 +314,8 @@ class Galaxy(Magneticum):
             self.set_Rshm()
             self.set_bVal()
             self.set_Xph()
+            self.set_st_met()
+            self.set_gas_met()
 
 
     def set_groupbase(self, fp: str):
@@ -300,7 +340,9 @@ class Galaxy(Magneticum):
         self.GRNR = super().get_halo_GRNR( self.groupbase, self.FSUB)
 
     def set_index_list(self):
-        PIDs = g3.read_new(groupbase+".0", "PID ",2)
+        PIDs = np.array([])
+        for k in range(5):
+            PIDs = np.append(PIDs,g3.read_new(groupbase+"."+str(k), "PID ",2))
         halo_pids = PIDs[self.SOFF:self.SOFF+self.SLEN+1]
         self.indlist = super().get_index_list(halo_pids, self.get_stars()["ID  "]).astype(bool)
 
@@ -339,25 +381,14 @@ class Galaxy(Magneticum):
         less = st_rad <= .1*self.Rvir
         
         st_mass = np.sum(mass[less])
-        # print(st_mass)
+        
         # Approximate from below
         r = 0.
         for dr in [1., .1, .01, .001, 1.e-4, 1.e-5]:
             while np.sum(mass[st_rad <= r+dr]) <= .5*st_mass:
                 r += dr   
         self.Rshm = round(self.pos_to_phys(r),5)
-        # print(self.Rshm)
         
-        
-
-        # jj = np.argsort(st_rad)
-        # mcur = 0.
-        # for k in range(len(st_rad)):
-        #     mcur += mass[jj[k]]
-        #     if mcur > .5*st_mass:
-        #         break
-        # r0 = self.pos_to_phys(st_rad[jj[k]])
-        # print(k, self.Rshm - r0)
 
     def set_bVal(self):
         """
@@ -369,9 +400,8 @@ class Galaxy(Magneticum):
         pos = self.pos_to_phys( stars["POS "][self.indlist] - self.center )
         vel = self.vel_to_phys( stars["VEL "][self.indlist] - self.Svel )
     
-        k, l = self.find_COM(pos,vel,mass,3.*self.Rshm)
+        k, _ = self.find_COM(pos,vel,mass,3.*self.Rshm)
     
-        # print(k,l)
         pos = pos - k
         # vel = vel - l
         rad = g3.to_spherical(pos, [0,0,0]).T[0]
@@ -379,9 +409,8 @@ class Galaxy(Magneticum):
 
 
         st_mass_ph = np.sum(mass[mask]) 
-        # print(f"{st_mass_ph = :.2e}")
 
-        self.Mstar = self.mass_to_phys(st_mass_ph)
+        self.Mstar = st_mass_ph
         self.bVal = np.log10( np.linalg.norm(self.spec_ang_mom(mass[mask], pos[mask], vel[mask])) ) - 2./3. * np.log10(st_mass_ph)        
     
     def set_Xph(self):
@@ -433,6 +462,57 @@ class Galaxy(Magneticum):
     @property
     def stars(self):
         return self.get_stars()
+
+    def set_st_met(self):
+        stars = self.stars
+        age = self.age_part(stars["AGE "]) # Myrs
+        age_c = (age <= 100)
+        mass = stars["MASS"]
+        iM = self.mass_to_phys( stars["iM  "] )
+        Zs = self.mass_to_phys( stars["Zs  "] )
+
+        if len(mass[age_c]) > 0:
+                
+            Zstar = np.sum(Zs[:,1:][age_c],axis=1) / (iM[age_c] - np.sum(Zs[age_c],axis=1)) / .02 # normalized by solar metallicity
+            logOH12_st = 12 + np.log10( Zs[:,3][age_c] / 16 / (iM[age_c] - np.sum(Zs[age_c],axis=1)) )
+            logFeH_st = np.log10( Zs[:,-2][age_c] / 55.85 / (iM[age_c] - np.sum(Zs[age_c],axis=1)) )
+
+            self.logOH12_s = np.average(logOH12_st, weights = mass[age_c])
+            self.logFeH_s = np.average(logFeH_st, weights = mass[age_c])
+            self.Zgal_s = np.average(Zstar, weights = mass[age_c])
+
+        else:
+            Zstar = np.sum(Zs[:,1:],axis=1) / (iM - np.sum(Zs,axis=1)) / .02 # normalized by solar metallicity
+            logOH12_st = 12 + np.log10( Zs[:,3] / 16 / (iM - np.sum(Zs,axis=1)) )
+            logFeH_st = np.log10( Zs[:,-2] / 55.85 / (iM - np.sum(Zs,axis=1)) )
+
+            self.logOH12_s = np.average(logOH12_st, weights = mass)
+            self.logFeH_s = np.average(logFeH_st, weights = mass)
+            self.Zgal_s = np.average( Zstar, weights = mass )
+
+    def set_gas_met(self):
+        gas = self.gas
+        sfr = gas["SFR "]
+        sfr_c = (sfr > 0)
+        mass = gas["MASS"]
+        Zs = self.mass_to_phys( gas["Zs  "] )
+
+        if len(mass[sfr_c]) > 0:
+                
+            Zgas = np.sum(Zs[:,1:][sfr_c],axis=1) / (mass[sfr_c] - np.sum(Zs[sfr_c],axis=1)) / .02 # normalized by solar metallicity
+            logOH12_gas = 12 + np.log10( Zs[:,3][sfr_c] / 16 / (mass[sfr_c] - np.sum(Zs[sfr_c],axis=1)) )
+
+            self.logOH12_g = np.average(logOH12_gas, weights = mass[sfr_c])
+            self.Zgal_g = np.average(Zgas, weights = mass[sfr_c])
+
+        else:
+            Zgas = np.sum(Zs[:,1:],axis=1) / (mass - np.sum(Zs,axis=1)) / .02 # normalized by solar metallicity
+            logOH12_gas = 12 + np.log10( Zs[:,3] / 16 / (mass - np.sum(Zs,axis=1)) )
+
+            self.logOH12_g = np.average(logOH12_gas, weights = mass)
+            self.Zgal_g = np.average(Zgas, weights = mass)
+            
+
 
     def add_luminosities(self):
         stars = self.get_stars
@@ -505,6 +585,7 @@ class Galaxy(Magneticum):
 
 if __name__ == "__main__":
     
+    import matplotlib.pyplot as plt
     groupbase = "/home/lcladm/Studium/Masterarbeit/test/dorc/uhr_test/groups_136/sub_136"
     snapbase = "/home/lcladm/Studium/Masterarbeit/test/dorc/uhr_test/snapdir_136/snap_136"
     phbase = "/home/lcladm/Studium/Masterarbeit/R136_AGN_fix/fits/"
@@ -514,7 +595,7 @@ if __name__ == "__main__":
     mass25K = np.zeros(4002)
     halo_FSUB = np.zeros(4002)
     halo_rad25K = np.zeros(4002)
-    for i,halo in enumerate(tqdm.tqdm(matcha.yield_haloes(groupbase,with_ids=True,ihalo_start=0,ihalo_end=4000,blocks=('MSTR','FSUB','R25K'),use_cache=False))):
+    for i,halo in enumerate(tqdm.tqdm(matcha.yield_haloes(groupbase,with_ids=True,ihalo_start=0,ihalo_end=2000,blocks=('MSTR','FSUB','R25K'),use_cache=False))):
         mass25K[i]         = halo['MSTR'][5] * 1e10 / h
         halo_FSUB[i]       = halo['FSUB']
         halo_rad25K[i]     = halo['R25K']
@@ -522,13 +603,37 @@ if __name__ == "__main__":
     halo_FSUB = halo_FSUB[sel]
 
     gal_dict = {}
+    ii = 0
     for fsub in tqdm.tqdm(halo_FSUB):
         key = f"{int(fsub):06d}"
         temp_gal = Galaxy(int(fsub),groupbase=groupbase,snapbase=snapbase,Xph_base=phbase)
         temp_gal.load
         gal_dict[key] = temp_gal
+        i+=1
+        if i%50 == 0:
+            np.save("gal_data_temp.npy", gal_dict)
+        
 
     np.save("gal_data.npy", gal_dict)
+
+    # gal_dict = Galaxy.gal_dict_from_npy("gal_data.npy")
+    # for key in tqdm.tqdm(gal_dict.keys()):
+    #     x = gal_dict[key]
+    #     x.load_FlatLCDM()
+    #     stars = x.stars
+    #     age = x.age_part(stars["AGE "])
+    #     age_c = (age <= 100)
+    #     mass = stars["MASS"]
+    #     if len(mass[age_c]) == 0:
+    #         continue
+    #     iM = x.mass_to_phys( stars["iM  "] )
+    #     Zs = x.mass_to_phys( stars["Zs  "] )
+    #     Zstar = np.sum(Zs[:,1:][age_c],axis=1) / (iM[age_c] - np.sum(Zs[age_c],axis=1))
+    #     logOH12 = 12 + np.log10( Zs[:,3][age_c] / 16 / (iM[age_c] - np.sum(Zs[age_c],axis=1)) )
+    #     # print(logOH12)
+    #     Zgal = np.average(logOH12, weights=mass[age_c]) # np.average(Zstar, weights=mass[age_c]/np.sum(mass[age_c]))
+    #     plt.plot(np.log10(x.Mstar/1.e10*.7),Zgal,lw=0.,c='k',marker='o',ms=5.)
+    # plt.show()
         
     # # x = Galaxy(1414,groupbase=groupbase,snapbase=snapbase,Xph_base=phbase)
     # y = Galaxy(6463,groupbase=groupbase,snapbase=snapbase,Xph_base=phbase)
