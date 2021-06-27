@@ -342,7 +342,7 @@ class Galaxy(Magneticum):
     def set_index_list(self):
         PIDs = np.array([])
         for k in range(5):
-            PIDs = np.append(PIDs,g3.read_new(groupbase+"."+str(k), "PID ",2))
+            PIDs = np.append(PIDs,g3.read_new(self.groupbase+"."+str(k), "PID ",2))
         halo_pids = PIDs[self.SOFF:self.SOFF+self.SLEN+1]
         self.indlist = super().get_index_list(halo_pids, self.get_stars()["ID  "]).astype(bool)
 
