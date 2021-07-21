@@ -65,6 +65,29 @@ class Integrate:
         T = .5 * np.sum((f[1:]+f[:-1])*delta)
         return T
 
+def calc_sideon_matrix(angmom_vec):
+    vec_in = np.asarray(angmom_vec)
+    vec_in = vec_in / np.sum(vec_in ** 2).sum() ** 0.5
+    vec_p1 = np.cross([1, 0, 0], vec_in)
+    vec_p1 = vec_p1 / np.sum(vec_p1 ** 2).sum() ** 0.5
+    vec_p2 = np.cross(vec_in, vec_p1)
+
+    matr = np.concatenate((vec_p2, vec_in, vec_p1)).reshape((3, 3))
+
+    return matr
+
+
+def calc_faceon_matrix(angmom_vec, up=[0.0, 1.0, 0.0]):
+    vec_in = np.asarray(angmom_vec)
+    vec_in = vec_in / np.sum(vec_in ** 2).sum() ** 0.5
+    vec_p1 = np.cross(up, vec_in)
+    vec_p1 = vec_p1 / np.sum(vec_p1 ** 2).sum() ** 0.5
+    vec_p2 = np.cross(vec_in, vec_p1)
+
+    matr = np.concatenate((vec_p1, vec_p2, vec_in)).reshape((3, 3))
+
+    return matr
+
 def GammaIncc(a,x):
     """
     Incomplete upper Gamma function optimized to also work with a < 0
