@@ -232,6 +232,12 @@ class XRB:
         if len(self.model()) != len(self.lumarr):
             # should not happen if inp is generated in the scope of XRB()
             raise IndexError("Input array is not the same length as intrinsic luminosity")
+        
+        if isinstance(NXRB, float):
+            if np.random.rand() < (NXRB -int(NXRB)):
+                NXRB = int(NXRB)+1
+            else:
+                NXRB = int(NXRB)
 
         inpCDF = self.calc_pCDF(self.model())
         
@@ -971,3 +977,32 @@ if __name__ == "__main__":
     ax3.legend(fontsize=11)
 
     plt.show()  
+
+
+    print("START sampling")
+    Nsamp = 250
+    np.random.seed(322)
+    OH = np.linspace(7,9.2,12)
+    SFR = [0.01,0.1,1,10,100]
+    curve_samp = []
+    gal = np.zeros_like(OH)
+    gal84 = np.zeros_like(OH)
+    gal16 = np.zeros_like(OH)
+    temp = np.zeros(Nsamp)
+    for sfr in SFR:
+        for i,oh in enumerate(tqdm.tqdm(OH)):
+            Lehm = Lehmer21(Lmin=35, nchan=5000, logOH12=oh, SFR=sfr)
+            for j in range(Nsamp):
+                temp[j] = np.sum( Lehm.sample(Lehm.model()[0])/sfr )
+            gal[i] = np.median( temp )
+            gal16[i] = np.percentile(temp,16)
+            gal84[i] = np.percentile(temp,84)
+        curve_samp.append(np.row_stack((gal,gal16,gal84)))
+        print(curve_samp)
+        plt.plot(OH,np.log10(gal),label=f"{sfr:.2f}")
+    # plt.yscale("log")
+    np.save("Lehm21_samp.npy",curve_samp)
+    plt.ylabel(r"$\log(L_X\,/\,\mathrm{SFR})$",fontsize=14)
+    plt.xlabel(r"$12+\log([O/H])$")
+    plt.legend()
+    plt.show()
