@@ -488,6 +488,12 @@ class Galaxy(Magneticum):
     def gas(self):
         return self.get_gas()
 
+    def get_gas_pos(self):
+        gas = self.stars
+        pos = gas["POS "]
+
+        return pos
+
     def get_stars(self):
         return super().halo_stars( self.snapbase, self.center, self.Rvir )
     
@@ -521,6 +527,28 @@ class Galaxy(Magneticum):
             self.logOH12_s = np.average(logOH12_st, weights = mass)
             self.logFeH_s = np.average(logFeH_st, weights = mass)
             self.Zgal_s = np.average( Zstar, weights = mass )
+    
+    def get_st_met_idv(self, bWeights: bool = False):
+        """
+        Returns metallicities for individual stars. Can also return masses for weights...
+        """
+        stars = self.stars
+        mass = stars["MASS"]
+        iM = stars["iM  "]
+        Zs = stars["Zs  "]
+        
+        Zstar = np.sum(Zs[:,1:],axis=1) / (iM - np.sum(Zs,axis=1)) / 0.02
+
+        if bWeights:
+            return (Zstar, mass)
+        else:
+            return Zstar
+    
+    def get_st_pos(self):
+        stars = self.stars
+        pos = stars["POS "]
+
+        return pos
 
     def set_gas_met(self):
         gas = self.gas
