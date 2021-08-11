@@ -528,7 +528,7 @@ class Galaxy(Magneticum):
             self.logFeH_s = np.average(logFeH_st, weights = mass)
             self.Zgal_s = np.average( Zstar, weights = mass )
     
-    def get_st_met_idv(self, bWeights: bool = False):
+    def get_st_met_idv(self, bWeight: bool = False):
         """
         Returns metallicities for individual stars. Can also return masses for weights...
         """
@@ -539,7 +539,7 @@ class Galaxy(Magneticum):
         
         Zstar = np.sum(Zs[:,1:],axis=1) / (iM - np.sum(Zs,axis=1)) / 0.02
 
-        if bWeights:
+        if bWeight:
             return (Zstar, mass)
         else:
             return Zstar
