@@ -7,9 +7,9 @@ class Integrate:
 
     @staticmethod
     def Riemann(func: np.ufunc, lim_l: float, lim_u: float, n: int, *arg: tuple) -> float:
-        eval = np.linspace(lim_l,lim_u,n)
+        eval = np.linspace(lim_l,lim_u,n+1)
         delta = np.diff(eval)
-        res = func(eval[:n-1]+delta/2,*arg)*delta
+        res = func(eval[:n]+delta/2,*arg)*delta
         return np.sum(res)
     
     @staticmethod
@@ -20,9 +20,9 @@ class Integrate:
         measure. This is faster than and equally precise as 'scipy.integrate.quad()'
         specifically when integrating 'self.diff_Nhxb_met()'. Might also be faster than
         """
-        eval = np.logspace(np.log10(lim_l),np.log10(lim_u),n)
+        eval = np.logspace(np.log10(lim_l),np.log10(lim_u),n+1)
         delta = np.diff(eval)
-        res = func(eval[:n-1]+delta/2,*arg)*delta
+        res = func(eval[:n]+delta/2,*arg)*delta
         return np.sum(res)
 
     @staticmethod

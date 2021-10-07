@@ -884,12 +884,27 @@ if __name__ == "__main__":
 
     groupbase = "/home/lcladm/Studium/Masterarbeit/test/dorc/uhr_test/groups_136/sub_136"
     snapbase = "/home/lcladm/Studium/Masterarbeit/test/dorc/uhr_test/snapdir_136/snap_136"
+    testsnapbase = "/home/lcladm/Studium/Masterarbeit/test/dorc/uhr_test/snapdir_136/test_snap_136"
     phbase = "/home/lcladm/Studium/Masterarbeit/R136_AGN_fix/fits/"
     phbase_2 = "/home/lcladm/Studium/Masterarbeit/R333/fits/"
     phbase_3 = "./fits_g/"
 
 
     head = g3.GadgetFile(snapbase+".0").header
+    # f = g3.GadgetFile(snapbase+".0")
+    # head = f.header
+    # f.write_header
+    # positions = f.read_new("POS ",-1) - 100.
+    # f.header.npart = [40,0,0,0,0,0]
+    # f.write_block("POS ", -1, positions, filename=testsnapbase+".0")
+    # print(f.header.npartTotal)
+    # pos = g3.GadgetFile(testsnapbase+".0").read_new("POS ",-1)
+    # print(g3.GadgetFile(testsnapbase+".0").header.npart)
+    # print(len(pos))
+    # positions = f.read_new("POS ",-1)
+    # print(positions-pos)
+    # print(g3.GadgetFile(testsnapbase+".0").header.npartTotal)
+    # input()
     h = head.HubbleParam
     zz = head.redshift
 

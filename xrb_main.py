@@ -284,6 +284,17 @@ class XRB:
         """
         m = (samp >= lim)
         return len(samp[m])
+
+    def XLF(self, samp: np.ndarray) -> np.ndarray:
+        """
+        Produces the XLF of a given sample
+        """
+        xlf = np.zeros_like(self.lumarr)
+        for i,lum in enumerate(self.lumarr):
+            xlf[i] = len(samp[samp > lum])
+        
+        return xlf
+
     
     @staticmethod
     def lum_sum(samp: np.ndarray, lim: float = 1.e35) -> float:
@@ -554,7 +565,7 @@ class Grimm03(XRB):
 
     norm: float             = 3.3
     gamma: float            = 1.61
-    Lcut: float             = 240
+    Lcut: float             = 200
 
     def __init__(self, 
                  nchan: int = 10000, Lmin: float = 35, Lmax: float = 41, 
@@ -594,7 +605,57 @@ class Grimm03(XRB):
 
         arr = self.vec_calc_SPL(self.lumarr/1.e38, *par)
 
-        return arr * SFR
+        return arr * self.SFR
+
+
+class Shty07(XRB):
+
+    norm: float             = 9/.2
+    Lb: float               = 2.e-3
+    gamma1: float           = 1.13
+    gamma2: float           = 1.74
+    Lcut: float             = 200
+
+    def __init__(self, 
+                 nchan: int = 10000, Lmin: float = 34, Lmax: float = 41, 
+                 Emin: float = 0.05, Emax: float = 50.1, 
+                 SFR: float = 1.) -> None:
+        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        if SFR < 0:
+            raise ValueError("SFR can't be smaller than 0")
+        self.SFR = SFR
+        self.vec_calc_BPL = np.vectorize(super().calc_BPL)
+
+    def model(self, bRand: bool = False, bLum: bool = False) -> np.ndarray:
+        """
+        Initializes model parameters for HMXB LFs of Grimm+03 single PL
+        returns array of either number of HMXBs > L or total luminosity of HMXBs > L
+        -----
+        SFR         :   model scaling, as host-galaxy's star formation rate
+                        in units of Msun/yr
+        bRand       :   boolean switching between randomized parameters\\
+                            according to their uncertainty
+        bLum        :   boolean switch between returning cumulative number function or total 
+                        luminosity. Since these are negative power laws, we modify input slope
+                        by -1
+        """
+        if not bRand:
+            par = (self.norm, self.Lb, self.Lcut, self.gamma1, self.gamma2)
+        else:
+            par = ( 10**self.par_rand(xu.log_xi_s, xu.log_sig_xi_s), 
+                    xu.Lcut_Hs,
+                    self.par_rand(xu.gamma_s,xu.sig_gam_s)
+                  )
+        
+        if bLum:
+            par = list(par)
+            par[-1] -= 1
+            par[-2] -= 1
+            par = tuple(par)
+
+        arr = self.vec_calc_BPL(self.lumarr/1.e38, *par)
+
+        return arr * self.SFR
 
 class Mineo12S(XRB):
 
@@ -649,7 +710,7 @@ class Mineo12S(XRB):
 class Mineo12B(XRB):
 
     Lcut: float             = 5.e3
-    LbH: float              = 110.
+    LbH: float              = .110
 
     gamma1: float           = 1.58
     gamma2: float           = 2.73
@@ -702,6 +763,59 @@ class Mineo12B(XRB):
         arr = self.vec_calc_BPL(self.lumarr/1.e38, *par)
 
         return arr * self.SFR
+
+
+class Lehmer17(XRB):
+
+    norm: float             = 52
+    alpha1: float           = 1.42
+    alpha2: float           = 1.37
+    alpha3: float           = 3.
+    kappa: float            = .51
+
+    Lb1: float              = .2
+    Lb2: float              = 2.5
+    Lcut: float             = 100.
+
+    def __init__(self, 
+                 nchan: int = 10000, Lmin: float = 35, Lmax: float = 41, 
+                 Emin: float = 0.05, Emax: float = 50.1, 
+                 Mstar: float = 1.) -> None:
+        super().__init__(nchan=nchan, Lmin=Lmin, Lmax=Lmax, Emin=Emin, Emax=Emax)
+        if Mstar < 0:
+            raise ValueError("Mstar can't be smaller than 0")
+        self.Mstar = Mstar
+        self.vec_calc_tBPL = np.vectorize(self.calc_tBPL)
+
+    def calc_tBPL(self, t: float, lum: float):
+
+        a2t: float          = self.alpha1 * (1 + (self.alpha2/self.alpha1 - 1)*(t/10.))
+        a3t: float          = self.alpha1 * (1 + (self.alpha3/self.alpha1 - 1)*(t/10.))
+        Kt: float           = self.norm * t**(-self.kappa)
+        inorm1: float       = self.Lb1**(a2t - self.alpha1)
+        inorm2: float       = self.Lb2**(a3t - a2t)
+
+        if lum <= self.Lb1:
+            res = ( (lum**(1-self.alpha1) - self.Lb1**(1-self.alpha1)) / (-1. + self.alpha1)
+                  + (self.Lb1**(1-a2t) - self.Lb2**(1-a2t)) / (-1. + a2t) * inorm1
+                  + (self.Lb2**(1-a3t) - self.Lcut**(1-a3t)) / (-1. + a3t) * inorm1 * inorm2 )
+
+        elif self.Lb1 < lum <= self.Lb2:
+            res = ( (lum**(1-a2t) - self.Lb2**(1-a2t)) / (-1. + a2t) * inorm1
+                  + (self.Lb2**(1-a3t) - self.Lcut**(1-a3t)) / (-1. + a3t) * inorm1 * inorm2 )
+        elif self.Lb2 < lum <= self.Lcut:
+            res = ( (lum**(1-a3t) - self.Lcut**(1-a3t)) / (-1. + a3t) * inorm1 * inorm2 )
+        else:
+            res = 0
+
+        return res * Kt
+
+    def model(self, t: float):
+
+        arr = self.vec_calc_tBPL(t, self.lumarr/1.e38)
+        return arr
+
+
 
 class Lehmer19H(XRB):
 
