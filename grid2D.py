@@ -1,7 +1,7 @@
 
 import numpy as np
 from numba import njit
-import g3read_units as g3u
+# import g3read_units as g3u
 
 
 ###----- UNIT HANDLER -----###

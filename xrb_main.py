@@ -50,7 +50,7 @@ class XRB:
     def calc_Zhang12(self, 
                   lum_in: float, K1: float, 
                   Lb1: float, Lb2: float, Lcut: float,
-                  alpha1: float, alpha2: float, alpha3: float) -> float:
+                  alpha1: float, alpha2: float, alpha3: float, bLum: bool) -> float:
         """
         Analytic solution of broken Power-Law LMXB luminosity function (Zhang+12)\\
         Used for vectorization in model_Nlxb()
@@ -68,22 +68,41 @@ class XRB:
         K2: float = self.Knorm(K1,Lb1,Lb2,alpha2)
         K3: float = self.Knorm(K2,Lb2,Lcut,alpha3)
 
-        if lum_in < Lb1:
-            return( K1*Lb1**alpha1 * ( lum_in**(1.-alpha1) - Lb1**(1.-alpha1) ) / (alpha1-1.) 
-                + K2*Lb2**alpha2 * ( Lb1**(1.-alpha2)-Lb2**(1.-alpha2) ) / (alpha2-1.)
-                + K3*Lcut**alpha3 * ( Lb2**(1.-alpha3)-Lcut**(1.-alpha3) ) / (alpha3-1.) 
-                )
+        if bLum:
+            if lum_in < Lb1:
+                return( K1*Lb1**alpha1 * ( lum_in**(2.-alpha1) - Lb1**(2.-alpha1) ) / (alpha1-2.) 
+                    + K2*Lb2**alpha2 * ( Lb1**(2.-alpha2)-Lb2**(2.-alpha2) ) / (alpha2-2.)
+                    + K3*Lcut**alpha3 * ( Lb2**(2.-alpha3)-Lcut**(2.-alpha3) ) / (alpha3-2.) 
+                    )
 
-        elif lum_in >= Lb1 and lum_in < Lb2:
-            return( K2*Lb2**alpha2 * ( lum_in**(1.-alpha2) - Lb2**(1.-alpha2) ) / (alpha2-1.)
-                + K3*Lcut**alpha3 * ( Lb2**(1.-alpha3) - Lcut**(1.-alpha3) ) / (alpha3-1.)
-                )
+            elif lum_in >= Lb1 and lum_in < Lb2:
+                return( K2*Lb2**alpha2 * ( lum_in**(2.-alpha2) - Lb2**(2.-alpha2) ) / (alpha2-2.)
+                        + K3*Lcut**alpha3 * ( Lb2**(2.-alpha3) - Lcut**(2.-alpha3) ) / (alpha3-2.)
+                        )
 
-        elif lum_in >= Lb2 and lum_in < Lcut:
-            return K3*Lcut**alpha3 * ( lum_in**(1.-alpha3) - Lcut**(1.-alpha3) ) / (alpha3-1.)
-        
+            elif lum_in >= Lb2 and lum_in < Lcut:
+                return K3*Lcut**alpha3 * ( lum_in**(2.-alpha3) - Lcut**(2.-alpha3) ) / (alpha3-2.)
+            
+            else:
+                return 0
+
         else:
-            return 0
+            if lum_in < Lb1:
+                return( K1*Lb1**alpha1 * ( lum_in**(1.-alpha1) - Lb1**(1.-alpha1) ) / (alpha1-1.) 
+                    + K2*Lb2**alpha2 * ( Lb1**(1.-alpha2)-Lb2**(1.-alpha2) ) / (alpha2-1.)
+                    + K3*Lcut**alpha3 * ( Lb2**(1.-alpha3)-Lcut**(1.-alpha3) ) / (alpha3-1.) 
+                    )
+
+            elif lum_in >= Lb1 and lum_in < Lb2:
+                return( K2*Lb2**alpha2 * ( lum_in**(1.-alpha2) - Lb2**(1.-alpha2) ) / (alpha2-1.)
+                    + K3*Lcut**alpha3 * ( Lb2**(1.-alpha3) - Lcut**(1.-alpha3) ) / (alpha3-1.)
+                    )
+
+            elif lum_in >= Lb2 and lum_in < Lcut:
+                return K3*Lcut**alpha3 * ( lum_in**(1.-alpha3) - Lcut**(1.-alpha3) ) / (alpha3-1.)
+            
+            else:
+                return 0
 
     def calc_SPL(self, lum_in: float, 
                       xi: float, Lcut: float, gamma: float ) -> float:
@@ -231,7 +250,7 @@ class XRB:
     def sample(self, NXRB: int) -> np.ndarray:
         if len(self.model()) != len(self.lumarr):
             # should not happen if inp is generated in the scope of XRB()
-            raise IndexError("Input array is not the same length as intrinsic luminosity")
+            raise IndexError("Input array is not the same length as intrinsic luminosity array")
         
         if isinstance(NXRB, float):
             if np.random.rand() < (NXRB -int(NXRB)):
@@ -285,12 +304,14 @@ class XRB:
         m = (samp >= lim)
         return len(samp[m])
 
-    def XLF(self, samp: np.ndarray) -> np.ndarray:
+    @staticmethod
+    @njit
+    def XLF(lumarr: np.ndarray, samp: np.ndarray) -> np.ndarray:
         """
         Produces the XLF of a given sample
         """
-        xlf = np.zeros_like(self.lumarr)
-        for i,lum in enumerate(self.lumarr):
+        xlf = np.zeros_like(lumarr)
+        for i,lum in enumerate(lumarr):
             xlf[i] = len(samp[samp > lum])
         
         return xlf
@@ -411,7 +432,7 @@ class Zhang12(XRB):
         """
     
         if not bRand:
-            par = (self.norm1, self.Lb1, self.Lb2, self.Lcut_L, self.alpha1, self.alpha2, self.alpha3)
+            par = (self.norm1, self.Lb1, self.Lb2, self.Lcut_L, self.alpha1, self.alpha2, self.alpha3, bLum)
         else:
             par = ( self.par_rand(self.norm1, self.sig_K1),
                     self.par_rand(self.Lb1, self.sig_Lb1), 
@@ -419,17 +440,11 @@ class Zhang12(XRB):
                     self.Lcut_L, # has no uncertainty given in Zhang+12
                     self.par_rand(self.alpha1, self.sig_a1), 
                     self.par_rand(self.alpha2, self.sig_a2), 
-                    self.par_rand(self.alpha3, self.sig_a3)
+                    self.par_rand(self.alpha3, self.sig_a3),
+                    bLum
                   )
-
-        if bLum:
-            par = list(par)
-            par[5] -= 1
-            par[6] -= 1
-            par[7] -= 1
-            par = tuple(par)
         
-        arr = self.vec_calc_Zhang12(self.lumarr/1.e36, *par)
+        arr = self.vec_calc_BPL(self.lumarr/1.e36, *par)
 
         return arr * self.Mstar
 
@@ -1096,9 +1111,11 @@ if __name__ == "__main__":
     print("START sampling")
     Nsamp = 250
     np.random.seed(322)
-    OH = np.linspace(7,9.2,12)
+    OH = np.arange(7,9.7,.1)
     SFR = [0.01,0.1,1,10,100]
-    curve_samp = []
+    curve_dict = {}
+    curve_dict["OH"] = OH
+    # curve_samp = []
     gal = np.zeros_like(OH)
     gal84 = np.zeros_like(OH)
     gal16 = np.zeros_like(OH)
@@ -1111,11 +1128,12 @@ if __name__ == "__main__":
             gal[i] = np.median( temp )
             gal16[i] = np.percentile(temp,16)
             gal84[i] = np.percentile(temp,84)
-        curve_samp.append(np.row_stack((gal,gal16,gal84)))
-        print(curve_samp)
+        curve_dict[f"sfr{sfr}"] = np.row_stack((gal,gal16,gal84))
+        # curve_samp.append(np.row_stack((gal,gal16,gal84)))
+        # print(curve_samp)
         plt.plot(OH,np.log10(gal),label=f"{sfr:.2f}")
     # plt.yscale("log")
-    np.save("Lehm21_samp.npy",curve_samp)
+    np.save("Lehm21_samp.npy",curve_dict)
     plt.ylabel(r"$\log(L_X\,/\,\mathrm{SFR})$",fontsize=14)
     plt.xlabel(r"$12+\log([O/H])$")
     plt.legend()

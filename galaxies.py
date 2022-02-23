@@ -5,7 +5,11 @@ import astropy.units as u
 import sys
 import os
 from dataclasses import dataclass, field
+from numba import njit
 
+KEV_TO_ERG = 1.60218e-9
+KPC_TO_CM = 3.0856e21
+MPC_TO_CM = 3.0856e24
 
 try:
     import tqdm
@@ -145,21 +149,21 @@ class Magneticum:
 
     def lum_dist_a(self, a):
         """
-        luminosity distance given scale factor a in cm
+        luminosity distance given scale factor a in Mpc
         """
         self.load_FlatLCDM()
-        return self.cos.luminosity_distance(1./a-1.).to("cm").value
+        return self.cos.luminosity_distance(1./a-1.).value
 
     def lum_dist_z(self, z):
         """
-        luminosity distance given scale factor a in cm
+        luminosity distance given scale factor a in Mpc
         """
         self.load_FlatLCDM()
-        return self.cos.luminosity_distance(z).to("cm").value
+        return self.cos.luminosity_distance(z).value
 
     def ang_dist(self, a):
         """
-        angular distance given scale factor a in cm
+        angular distance given scale factor a in Mpc
         """
         return self.lum_dist(a) / a / a
 
@@ -646,15 +650,26 @@ class Galaxy(Magneticum):
         gal_dict = np.load(npy_obj, allow_pickle=True).item()
         return gal_dict
 
-    
 
-    # @staticmethod
-def calc_lum( phArr: np.ndarray, Tobs: float = 1., Aeff: float = 1., Dlum: float = 1. ):
-    # m = (phArr > 0.5) & (phArr < 8.)
-    flux = np.sum(phArr)*1.602e-9
-    lumi = ( flux / Aeff / Tobs * Dlum * Dlum * 4.*np.pi )
-        
-    return lumi
+def calc_lum_cgs(phE: np.ndarray, Aeff: float, Tobs: float, dLum: float,
+             Emin: float = .5, Emax: float = 8):
+    """
+    Calculate luminosity in energy range [Emin,Emax] from photon
+    energy array phE
+    Returns luminosity in erg/s
+    -----
+    Aeff: effective area in cm^2
+    Tobs: exposure time in s
+    dLum: luminosity distance in cm
+    Emin: in keV
+    Emax: in keV
+    """
+    if not isinstance(phE, np.ndarray):
+        phE = np.array(phE)
+    dLum2 = 4*np.pi*(dLum)**2/Aeff/Tobs
+    Emask = (phE >= Emin) & (phE <= Emax)
+
+    return np.sum(phE[Emask])*dLum2*KEV_TO_ERG
 
 def get_num_XRB_base( Xph_base: str, sFSUB: str, Tobs: float = 1., Aeff: float = 1., Dlum: float = 1., Lc: float = -1.):
     """
@@ -701,15 +716,15 @@ def get_num_XRB_base( Xph_base: str, sFSUB: str, Tobs: float = 1., Aeff: float =
     
     for i in range(numHXB):
         if i == 0:
-            lumH[i] = calc_lum( phE_h[0:indx_pckg_end_h[0]+1], Tobs, Aeff, Dlum )
+            lumH[i] = calc_lum_cgs( phE_h[0:indx_pckg_end_h[0]+1], Tobs, Aeff, Dlum )
         else:
-            lumH[i] = calc_lum( phE_h[indx_pckg_end_h[i-1]+1:indx_pckg_end_h[i]+1], Tobs, Aeff, Dlum )
+            lumH[i] = calc_lum_cgs( phE_h[indx_pckg_end_h[i-1]+1:indx_pckg_end_h[i]+1], Tobs, Aeff, Dlum )
 
     for i in range(numLXB):
         if i == 0:
-            lumL[i] = calc_lum( phE_l[0:indx_pckg_end_l[0]+1], Tobs, Aeff, Dlum )
+            lumL[i] = calc_lum_cgs( phE_l[0:indx_pckg_end_l[0]+1], Tobs, Aeff, Dlum )
         else:
-            lumL[i] = calc_lum( phE_l[indx_pckg_end_l[i-1]+1:indx_pckg_end_l[i]+1], Tobs, Aeff, Dlum )
+            lumL[i] = calc_lum_cgs( phE_l[indx_pckg_end_l[i-1]+1:indx_pckg_end_l[i]+1], Tobs, Aeff, Dlum )
 
     if Lc < 0:
         return [(numHXB, lumH), (numLXB, lumL)]
@@ -732,9 +747,9 @@ def get_num_XRB( phE_h: list, Tobs: float = 1., Aeff: float = 1., Dlum: float = 
     
     for i in range(numHXB):
         if i == 0:
-            lumH[i] = calc_lum( phE_h[0:indx_pckg_end_h[0]+1], Tobs, Aeff, Dlum )
+            lumH[i] = calc_lum_cgs( phE_h[0:indx_pckg_end_h[0]+1], Tobs, Aeff, Dlum )
         else:
-            lumH[i] = calc_lum( phE_h[indx_pckg_end_h[i-1]+1:indx_pckg_end_h[i]+1], Tobs, Aeff, Dlum )
+            lumH[i] = calc_lum_cgs( phE_h[indx_pckg_end_h[i-1]+1:indx_pckg_end_h[i]+1], Tobs, Aeff, Dlum )
 
     if Lc < 0:
         return (numHXB, lumH)
@@ -742,6 +757,31 @@ def get_num_XRB( phE_h: list, Tobs: float = 1., Aeff: float = 1., Dlum: float = 
         lumH = lumH[lumH>Lc]
         numH = len(lumH)
         return (numH, lumH)
+
+# @njit
+# def get_num_XRB( phE: np.ndarray, Tobs: float = 1., Aeff: float = 1., Dlum: float = 1., Lc: float = -1.):
+#     """
+#     Returns tuple containing number of XRBs and array of luminosities
+#     """
+#     numXRB = len( np.diff(phE)[np.diff(phE)<0] )
+#     debugNum = 0
+#     lum = np.zeros( numXRB+1 )
+#     start = 0
+
+#     for i in range(len(phE)):
+#         if i >= len(phE)-1:
+#             lum[debugNum] = calc_lum(phE[start:i+1], Tobs, Aeff, Dlum)
+#             # print(i,lum[debugNum],numXRB,debugNum)
+#             break
+#         if phE[i] > phE[i+1]:
+#             lum[debugNum] = calc_lum(phE[start:i+1], Tobs, Aeff, Dlum)
+#             # print(i,lum[debugNum],numXRB,debugNum)
+#             debugNum += 1
+#             start = i+1
+    
+#     return (debugNum, lum)
+
+             
 
 def calc_galLumX(Xph_base: str, sFSUB: str, Tobs: float = 1., Aeff: float = 1., Dlum: float = 1.):
     fp_gas = Xph_base+"gal"+sFSUB+"GAS.fits"
@@ -771,7 +811,7 @@ def calc_galLumX(Xph_base: str, sFSUB: str, Tobs: float = 1., Aeff: float = 1., 
         hxq = (x < 8.) & (x > 2.)
         hxp = (x < 10.) & (x > 2.)
 
-        XrayLum[key] = ( calc_lum(x[tot],Tobs,Aeff,Dlum), calc_lum(x[sx],Tobs,Aeff,Dlum), calc_lum(x[mxq],Tobs,Aeff,Dlum), calc_lum(x[mxp],Tobs,Aeff,Dlum), calc_lum(x[hxq],Tobs,Aeff,Dlum), calc_lum(x[hxp],Tobs,Aeff,Dlum) )
+        XrayLum[key] = ( calc_lum_cgs(x[tot],Tobs,Aeff,Dlum), calc_lum_cgs(x[sx],Tobs,Aeff,Dlum), calc_lum_cgs(x[mxq],Tobs,Aeff,Dlum), calc_lum_cgs(x[mxp],Tobs,Aeff,Dlum), calc_lum_cgs(x[hxq],Tobs,Aeff,Dlum), calc_lum_cgs(x[hxp],Tobs,Aeff,Dlum) )
 
     return XrayLum
 
@@ -1046,8 +1086,8 @@ if __name__ == "__main__":
         Xph_gas = Xph_gas[(Xph_gas>=.5)&(Xph_gas<8.)]
         # phx_pos = np.column_stack(tbl_hxrb["POS_X"],tbl_hxrb["POS_Y"])
         NXB, lum = get_num_XRB(Xph_xrb, 1.e6, 1.e3, x.lum_dist_z(x.redshift), Lc=1.e39)
-        Lx = calc_lum(Xph_xrb,1.e6,1.e3,x.lum_dist_z(zz))
-        Lg = calc_lum(Xph_gas,1.e6,1.e3,x.lum_dist_z(zz))
+        Lx = calc_lum_cgs(Xph_xrb,1.e6,1.e3,x.lum_dist_z(zz))
+        Lg = calc_lum_cgs(Xph_gas,1.e6,1.e3,x.lum_dist_z(zz))
         
         # print(np.sum(gas['SFR '][mask1]),x.SFR,aSFR,np.log10(Lx),np.log10(Lx/x.SFR),np.log10(Lx/aSFR),x.logOH12_s,x.logOH12_g)
         # if x.SFR <= 0.:

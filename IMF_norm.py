@@ -42,7 +42,7 @@ def IMF_N(m,a=.241367,b=.241367,c=.497056):
 
     return res
 
-def dm_dt(m,t):
+def dm_dt_MM(m,t):
     """
     't': time in [Gyr],
     'm': mass in [Msun]
@@ -61,14 +61,14 @@ def dm_dt(m,t):
     if(m > 53.054):
         return -0.54054054054 * m / (t - 0.003)
 
-def dm_dt2(m,t):
+def dm_dt_PM(m,t):
     if(t > 0.039765318659064693):
         return -m / t * (1.338 - 0.1116 * (9 + np.log10(t)))
     else:
         return -0.45045045045 * m / (t - 0.003)
 
 
-def lifetime(mass1: float):
+def lifetime_MM(mass1: float):
     """
     Stellar lifetime function of Maeder & Maynet (1989) extrapolated by Chiappini, Matteucci & Gratton (1997).
     See also Tornatore (2007) for use case in stellar chemical enrichment.
@@ -95,14 +95,14 @@ def lifetime(mass1: float):
 
     return tau
 
-def lifetime2(mass):
+def lifetime_PM(mass):
     if(mass <= 6.6):
         return pow(10, ((1.338 - np.sqrt(1.790 - 0.2232 * (7.764 - np.log10(mass)))) / 0.1116) - 9)
     else:
         return 1.2 * pow(mass, -1.85) + 0.003
 
 
-def inverse_lifetime(tau: float):
+def inverse_lifetime_MM(tau: float):
     """
     Inverse stellar lifetime function of Maeder & Maynet (1989) extrapolated by Chiappini, Matteucci & Gratton (1997).
     See also Tornatore (2007) for use case in stellar chemical enrichment.
@@ -126,7 +126,7 @@ def inverse_lifetime(tau: float):
         return 100
 
 
-def inverse_lifetime2(tau):
+def inverse_lifetime_PM(tau):
     if(tau > 0.039765318659064693):
         return pow(10, 7.764 - (1.79 - pow(1.338 - 0.1116 * (9 + np.log10(tau)), 2)) / 0.2232)
     elif(tau > .003001):
@@ -134,23 +134,19 @@ def inverse_lifetime2(tau):
     else:
         return 100.
 
-def LT_SNrate(time):
+def LT_SNrate(time, bPM: bool = True):
     """
     time: in [Gyr]
+    bPM: boolean controlling the lifetime-function type
     returns SNII-rate in [#/Gyr] since IMF_N ~ dN/dm with dm/dt ->>> dN/dt
     for a SSP of 1 Msun
     """
-    mass_SNR = inverse_lifetime(time)
-    return (IMF_N(mass_SNR) * (-dm_dt(mass_SNR, time)))
-
-def LT_SNrate2(time):
-    """
-    time: in [Gyr]
-    returns SNII-rate in [#/Gyr] since IMF_N ~ dN/dm with dm/dt ->>> dN/dt
-    for a SSP of 1 Msun
-    """
-    mass_SNR = inverse_lifetime2(time)
-    return (IMF_N(mass_SNR) * (-dm_dt2(mass_SNR, time)))
+    if bPM:
+        mass_SNR = inverse_lifetime_PM(time)
+        return (IMF_N(mass_SNR) * (-dm_dt_PM(mass_SNR, time)))
+    else:
+        mass_SNR = inverse_lifetime_MM(time)
+        return (IMF_N(mass_SNR) * (-dm_dt_MM(mass_SNR, time)))
 
 def Shty07(Ntime: np.ndarray, mas: np.ndarray):
 
@@ -165,19 +161,17 @@ def Shty07(Ntime: np.ndarray, mas: np.ndarray):
 
 if __name__ == '__main__':
     time_arr = np.logspace(np.log10(4e-3), -1, 10000)
-    mass_arr = np.vectorize(inverse_lifetime)(time_arr[::-1])
+    mass_arr = np.vectorize(inverse_lifetime_MM)(time_arr[::-1])
     mass_diff = np.diff(mass_arr)
-    print(time_arr, mass_arr, inverse_lifetime(.1))
+    print(time_arr, mass_arr, inverse_lifetime_MM(.1))
     imf_fac = helper.Integrate.Riemann_log(np.vectorize(IMF_N),8,100,10000)
-    print(IMF_m(.1), imf_fac, inverse_lifetime(.003))
+    print(IMF_m(.1), imf_fac, inverse_lifetime_PM(.003))
 
     from galaxies import Galaxy
     import g3read as g3
-    groupbase = "/home/lcladm/Studium/Masterarbeit/test/dorc/uhr_test/groups_136/sub_136"
-    snapbase = "/home/lcladm/Studium/Masterarbeit/test/dorc/uhr_test/snapdir_136/snap_136"
-    phbase = "/home/lcladm/Studium/Masterarbeit/R136_AGN_fix/fits/"
-    phbase_2 = "/home/lcladm/Studium/Masterarbeit/R333/fits/"
-    phbase_3 = "./fits_g/"
+    groupbase = "/HydroSims/Magneticum/Box4/uhr_test/groups_136/sub_136"
+    snapbase = "/HydroSims/Magneticum/Box4/uhr_test/snapdir_136/snap_136"
+    phbase = "/ptmp2/vladutescu/paper21/seed/919/fits/"
 
 
     head = g3.GadgetFile(snapbase+".0").header
@@ -189,6 +183,8 @@ if __name__ == '__main__':
         # if int(key) == 13633:
         if int(key) == 12623:
             x = gal_dict[key]
+            x.snapbase = snapbase
+            x.groupbase = groupbase
             stars = x.get_stars()
             pos = x.pos_to_phys(stars["POS "] - x.center)
             age = stars["AGE "]
@@ -207,44 +203,28 @@ if __name__ == '__main__':
             print("aSFR ",asfr)
             
 
-    plt.plot(mass_arr, np.vectorize(lifetime)(mass_arr)*1e3,label="MM lifetime")
-    plt.plot(mass_arr, np.vectorize(lifetime2)(mass_arr)*1e3,label="PM lifetime")
-    plt.xscale('log')
-    plt.yscale('log')
-    plt.xlabel(r"$M_{\odot}$",fontsize=13)
-    plt.ylabel(r"$\tau_{M}$ [Myr]",fontsize=13)
-    plt.xticks([10,30,50],fontsize=12)
-    plt.yticks(fontsize=12)
-    plt.gca().xaxis.set_major_formatter(StrMethodFormatter('{x:,.0f}'))
-    plt.gca().yaxis.set_major_formatter(StrMethodFormatter('{x:,.0f}'))
-    plt.legend()
-    plt.show()
-
     Npop = len(age)
     Mtot = mass 
     ran_stars = age/1e3 #np.random.uniform(.004,.1,Npop)
     LT = np.vectorize(LT_SNrate)
-    LT2 = np.vectorize(LT_SNrate2)
-    #print("int ",helper.Integrate.Riemann_log(LT2,.004,lifetime2(8.),10000) )
     f_x = xm.Mineo12S(Lmin=35).model()[0] / imf_fac * 1.e-5
     print(f_x)
-    binary_frac = 1
-    eff = 1.e-4*mass*f_x*binary_frac
+    eff = 1.e-4*mass*f_x
     
     SFR = asfr #np.sum(Mtot) / 1.e8
 
-    NHXB_LT = np.sum(LT(ran_stars[age<30])*1.e-5*Mtot[age<30]*.18*7*binary_frac)
+    NHXB_LT = np.sum(LT(ran_stars[age<30],False)*1.e-5*Mtot[age<30]*.18*7)
     NHXB_th = 135*SFR
 
-    NHXB_LT2 = np.sum(LT2(ran_stars[age<30])*eff[age<30])
+    NHXB_LT2 = np.sum(LT(ran_stars[age<30])*eff[age<30])
     NHXB_th2 = xm.Mineo12S().model()[0]*SFR
 
     print(f"SFR = {SFR:.1f}\nNHXB_LT = {NHXB_LT:.1f}\nNHXB_th = {NHXB_th:.1f}")
     print(f"SFR = {SFR:.1f}\nNHXB_LT2 = {NHXB_LT2:.1f}\nNHXB_th2 = {NHXB_th2:.1f}")
-    print(LT2(0.02202))
+    print(LT(0.02202))
 
-    plt.plot(np.log10(time_arr*1e3), np.log10(LT(time_arr)),label='MM89 lifetime')
-    plt.plot(np.log10(time_arr*1e3), np.log10(LT2(time_arr)),label='PM93 lifetime')
+    plt.plot(np.log10(time_arr*1e3), np.log10(LT(time_arr,False)),label='MM89 lifetime')
+    plt.plot(np.log10(time_arr*1e3), np.log10(LT(time_arr)),label='PM93 lifetime')
     plt.xlabel(r"$\log(\mathrm{\tau_M\,[Myr]})$",fontsize=13)
     plt.ylabel(r"$\log(R_{\mathrm{SNII}}\,\, [\mathrm{Gyr^{-1}}])$",fontsize=13)
     plt.vlines(np.log10(4),-1,0.,color='k',ls="--",lw=2.,label=r"age cut")
@@ -264,6 +244,10 @@ if __name__ == '__main__':
         if i >= 2000:
             break
         x = gal_dict[key]
+        x.snapbase = snapbase
+        x.groupbase = groupbase
+        if x.SFR < 0.005:
+            continue
         stars = x.get_stars()
         pos = x.pos_to_phys(stars["POS "] - x.center)
         age = stars["AGE "]
@@ -277,17 +261,15 @@ if __name__ == '__main__':
         iM = x.mass_to_phys(stars["iM  "])[mask]
         asfr = np.sum(mass)/1e8
         
-        nhxb2[i] = np.sum(Shty07(age,mass))/asfr
-
         mass = mass[age<.03]
         age = age[age<.03]
         
         if len(age)==0:
             continue
         # nhxb[i] = np.sum(LT(age)*1.e-5*mass*f_x*8.21*binary_frac)/asfr
-        nhxb[i] = np.sum(LT(age)*1.e-4*mass*f_x)/asfr
+        nhxb[i] = np.sum(LT(age,False)*1.e-4*mass*f_x)/asfr
         # nhxb4[i] = np.sum(LT2(age)*1.e-5*mass*f_x*8.21*binary_frac)/asfr
-        nhxb4[i] = np.sum(LT2(age)*1.e-4*mass*f_x)/asfr
+        nhxb4[i] = np.sum(LT(age)*1.e-4*mass*f_x)/asfr
         if (nhxb4[i] < 40) or (nhxb4[i] > 3*187):
             print(i, nhxb4[i], asfr, age*1e3)
         sfr[i] = asfr

@@ -1,4 +1,5 @@
 
+from dataclasses import dataclass
 import numpy as np
 from scipy.special import gammaincc, gamma
 from numba import njit
@@ -64,6 +65,97 @@ class Integrate:
         delta = np.diff(eval)
         T = .5 * np.sum((f[1:]+f[:-1])*delta)
         return T
+
+class QuickStats:
+
+    @staticmethod
+    def chi2(d: np.ndarray, m: np.ndarray, s = 1., dof = 2.):
+        """
+        Quick and dirty chisquared estimate.
+        Returns statistic.
+        -----
+        d: data
+        m: model to compare data to
+        s: y-error of data. Can either be single number or array
+           with same length as data
+        """
+        r = d - m
+        chisq = np.sum((r/s)**2)
+        return chisq/(len(d)-dof)
+    
+    @staticmethod
+    def log_err(x,dx):
+        """
+        Converts std absolute error to
+        relative log error
+        -----
+        0.43429 = 1/ln(10)
+        x: data
+        dx: absolute std error of data
+        """
+        return 0.43429*dx/x
+
+class phox_file:
+    """
+    Handles phox data files generated with unit 1.
+    Identifiers decide between the two different file
+    formats. Formats share the same header.
+    Only one identifier can be 'True'. Both 'True' or 
+    both 'False' yields only the header content.
+    -----
+    (bool) is_erg:  identifier for energy package file
+                    typically named '...E.dat'
+    (bool) is pos:  identifier for position package file
+                    typically named '...X.dat'
+    """
+    def __init__(self, phox_file: str, is_erg: bool = False, is_pos: bool = False) -> None:
+        if is_erg and is_pos:
+            print("Inconsistent file identifier. Fallbacke")
+        with open(phox_file,"rb") as f:
+            self.e_min       = float(np.fromfile(f,np.float64,count=1)   ) # [keV]
+            self.e_max       = float(np.fromfile(f,np.float64,count=1)   ) # [keV]
+            self.n_chan      = int(  np.fromfile(f,np.int32,count=1)     ) # energy bins
+            self.temp_min    = float(np.fromfile(f,np.float32,count=1)   ) # [K]
+            self.delta_temp  = float(np.fromfile(f,np.float32,count=1)   ) # [K]
+            self.area        = float(np.fromfile(f,np.float64,count=1)   ) # [cm^2]
+            self.time        = float(np.fromfile(f,np.float64,count=1)   ) # [s]
+            self.Da          = float(np.fromfile(f,np.float64,count=1)   ) # [cm]
+            self.zz          = float(np.fromfile(f,np.float64,count=1)   ) 
+            self.zz_obs      = float(np.fromfile(f,np.float64,count=1)   ) 
+            self.om0M        = float(np.fromfile(f,np.float64,count=1)   ) 
+            self.om0L        = float(np.fromfile(f,np.float64,count=1)   ) 
+            self.h0          = float(np.fromfile(f,np.float64,count=1)   ) 
+            self.nph         = int(np.fromfile(f,np.ulonglong,count=1)   )
+            self.active_part = int(np.fromfile(f,np.ulonglong,count=1)   )
+            if is_erg:
+                self.ph_per_part = np.fromfile(f,np.int32,count=self.active_part)
+                self.phE         = np.fromfile(f,np.float32,count=self.nph)
+            if is_pos:
+                self.x           = np.fromfile(f,np.float32,count=self.active_part)
+                self.y           = np.fromfile(f,np.float32,count=self.active_part)
+                self.z           = np.fromfile(f,np.float32,count=self.active_part)
+                self.vx          = np.fromfile(f,np.float32,count=self.active_part)
+                self.vy          = np.fromfile(f,np.float32,count=self.active_part)
+                self.vz          = np.fromfile(f,np.float32,count=self.active_part)
+                self.hsml        = np.fromfile(f,np.float32,count=self.active_part)
+
+        
+def Lehm16_sim():
+    from scipy.stats import loguniform
+    import xrb_main as xm
+    N=40000
+    m1 = xm.Mineo12S(nchan=5000,Lmin=36)
+    nhxb = m1.model()[0]
+    z1 = xm.Zhang12(nchan=5000,Lmin=36)
+    nlxb = z1.model()[0]
+    Lhxb = np.zeros(N)
+    Llxb = np.zeros(N)
+    SFRarr,mstr = loguniform.rvs(0.01,500,size=N),loguniform.rvs(1e-2,6e0,size=N)
+    for i,vals in enumerate(zip(SFRarr,mstr)):
+        s,m = vals
+        Lhxb[i] = np.sum(m1.sample(nhxb*s))
+        Llxb[i] = np.sum(z1.sample(nlxb*m))
+    return Lhxb+Llxb, SFRarr/mstr*1e-11
 
 def calc_sideon_matrix(angmom_vec):
     vec_in = np.asarray(angmom_vec)
