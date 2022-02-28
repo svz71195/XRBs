@@ -1,0 +1,5 @@
+PhoxUtil/__pycache__
+Figures/
+*.dat
+*.npy
+*.egg-info
