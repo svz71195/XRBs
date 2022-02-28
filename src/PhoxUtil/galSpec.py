@@ -784,7 +784,7 @@ class GalaxyData:
         LxG_arr     = np.zeros(len(gal_dict))
         oh_arr      = np.zeros(len(gal_dict))
 
-        bins        = np.logspace(np.log10(.5),1,251)
+        bins        = np.logspace(np.log10(.5),1,2501)
         phEh_hist   = np.zeros((len(gal_dict),len(bins)-1))
         phEz_hist,phEl_hist,phEg_hist = np.zeros_like(phEh_hist),np.zeros_like(phEh_hist),np.zeros_like(phEh_hist)
         phEh_len    = np.zeros((len(gal_dict),3))
@@ -867,19 +867,12 @@ class GalaxyData:
         self.dist           = dist
 
 if __name__ == '__main__':
-    fp = "/ptmp2/vladutescu/paper21/seed/919/"
-    np.random.seed(1234)
-    gd = GalaxyData(fp,15)
-    # import g3read as g3
-    # x = g3.read_new(fp+"snapdir_136/snap_136.0",["RHO ","NH  "],0,is_snap=True)
-    # print(1.989e43/3.085678e21**3)
-    # print(f"rho[munit lunit^-3 h^-2 (1+z)^-3] = {x['RHO '][0]:.4e}\nnh[cm^-3] = {x['NH  '][0]:.4e}")
-    # nh = x['RHO '][0]*1.989e43/3.085678e21**3/1.6726e-24*.704**2*1.066**3*.76
-    # print(f"rho -> nh = {nh:.4e}\nnh[cm^-3] = {x['NH  '][0]:.4e}")
+    pass
+    # fp = "/ptmp2/vladutescu/paper21/seed/919/"
+    # np.random.seed(1234)
+    # gd = GalaxyData(fp,15)    
 
-    
-
-    mean_XLF(gd)
+    # mean_XLF(gd)
     # plot_average_spec(gd,msk)
     # plot_count_ratio(gd,msk)
     # plot_Lx_SFR(gd,msk,bGAS=True)
