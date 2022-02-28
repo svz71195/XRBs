@@ -1,4 +1,4 @@
-PhoxUtil/__pycache__
+*.pyc
 Figures/
 *.dat
 *.npy
