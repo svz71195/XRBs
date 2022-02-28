@@ -1,7 +1,7 @@
 import numpy as np
-from astropy.table import Table
+# from astropy.table import Table
 from astropy.cosmology import FlatLambdaCDM
-import astropy.units as u
+# import astropy.units as u
 import sys
 import os
 from dataclasses import dataclass, field
@@ -213,7 +213,6 @@ class Magneticum:
 
 
 
-
 @dataclass
 class Galaxy(Magneticum):
     """
@@ -244,17 +243,9 @@ class Galaxy(Magneticum):
     logOH12_g: float        = 8.69
     Zgal_g: float           = 0.
     
-    
-    ##--- Derived from PHOX .fits files
-    # Xph_agn: dict           = field(default_factory=dict)
-    # Xph_gas: dict           = field(default_factory=dict)
-    # Xph_xrb: dict           = field(default_factory=dict)
-    
     ##--- Derived from which Magneticum Box ---##
     groupbase: str          = "./Box4/uhr_test/groups_136/sub_136"
     snapbase: str           = "./Box4/uhr_test/snapdir_136/snap_136"
-    Xph_base: str           = "./fits_136/"
-
 
     @property
     def sFSUB(self):
@@ -282,9 +273,6 @@ class Galaxy(Magneticum):
         if not os.path.isfile(self.snapbase+".0"):
             raise FileNotFoundError(self.snapbase+" does not contain the expected files...")
 
-        if not os.path.isdir(self.Xph_base):
-            raise FileNotFoundError(self.Xph_base+" is not a valid directory...")
-
         if False:
             with tqdm.tqdm(total=7, file=sys.stdout) as pbar:
                 
@@ -306,19 +294,13 @@ class Galaxy(Magneticum):
                 self.set_bVal()
                 pbar.update(1)
 
-                if isinstance( self.Xph_base, str ):
-                    self.set_Xph()
-                pbar.update(1)
-
         else:
             self.load_FlatLCDM()
-            # self.redshift = self.zz_c
             self.set_GRNR()
             self.center, self.Mstar, self.SFR, self.Mvir, self.Rvir, self.R25K, self.Svel, self.sZ = self.get_halo_data(self.groupbase, self.GRNR)
             self.set_index_list()
             self.set_Rshm()
             self.set_bVal()
-            # self.set_Xph()
             self.set_st_met()
             self.set_gas_met()
 
@@ -334,12 +316,6 @@ class Galaxy(Magneticum):
             self.snapbase = fp
         else:
             raise TypeError("Can not set snapbase to non str object")
-
-    def set_Xph_base(self, fp: str):
-        if isinstance(fp, str):
-            self.groupbase = fp
-        else:
-            raise TypeError("Can not set Xph_base to non str object")
 
     def set_GRNR(self) -> None:
         self.GRNR = super().get_halo_GRNR( self.groupbase, self.FSUB)
@@ -414,16 +390,6 @@ class Galaxy(Magneticum):
                 r += dr
 
         self.Rshm = round(r,5)
-
-        # fig = plt.figure()
-        # ax = fig.add_subplot(projection='3d')
-        # less = st_rad <= 3*r
-
-        # ax.scatter(pos[::4,0][less[::4]],pos[::4,1][less[::4]],pos[::4,2][less[::4]],alpha=.051,edgecolors='none')
-        # ax.set_xlabel("X")
-        # ax.set_ylabel("Y")
-        # ax.set_zlabel("Z")
-        # plt.show()
         
 
     def set_bVal(self):
@@ -449,41 +415,6 @@ class Galaxy(Magneticum):
         self.Mstar = st_mass_ph 
 
         self.bVal = np.log10( np.linalg.norm(self.spec_ang_mom(mass[mask], pos[mask], vel[mask])) ) - 2./3. * np.log10(st_mass_ph)        
-    
-    def set_Xph(self):
-        fp_gas = self.Xph_base+"gal"+self.sFSUB+"GAS.fits"
-        fp_agn = self.Xph_base+"gal"+self.sFSUB+"AGN.fits"
-        fp_xrb = self.Xph_base+"gal"+self.sFSUB+"XRB.fits"
-        tbl_gas = Table.read(fp_gas)
-        tbl_agn = Table.read(fp_agn)
-        tbl_xrb = Table.read(fp_xrb)
-        
-        try:
-            self.Xph_gas["PHE"] = np.array(tbl_gas["PHOTON_ENERGY"])
-            self.Xph_agn["PHE"] = np.array(tbl_agn["PHOTON_ENERGY"])
-            self.Xph_xrb["PHE"] = np.array(tbl_xrb["PHOTON_ENERGY"])
-        except KeyError:
-
-            try:
-                self.Xph_gas["PHE"] = np.array(tbl_gas["PHE"])
-                self.Xph_agn["PHE"] = np.array(tbl_agn["PHE"])
-                
-            except KeyError:
-                raise KeyError("No column name called 'PHE' or 'PHOTON_ENERGY' found")
-        
-        try:
-            self.Xph_gas["XPOS"] = np.array(tbl_gas["POS_X"])
-            self.Xph_agn["XPOS"] = np.array(tbl_agn["POS_X"])
-            self.Xph_xrb["XPOS"] = np.array(tbl_xrb["POS_X"])
-        except KeyError:
-            raise KeyError("No coolumn name called 'XPOS' found")
-
-        try:
-            self.Xph_gas["YPOS"] = np.array(tbl_gas["POS_Y"])
-            self.Xph_agn["YPOS"] = np.array(tbl_agn["POS_Y"])
-            self.Xph_xrb["YPOS"] = np.array(tbl_xrb["POS_Y"])
-        except KeyError:
-            raise KeyError("No coolumn name called 'YPOS' found")
 
     def get_gas(self):
         return super().halo_gas( self.snapbase, self.center, self.Rvir )
@@ -645,306 +576,19 @@ class Galaxy(Magneticum):
 
         return (CB07, tempiAS)
 
-    @classmethod
-    def gal_dict_from_npy(cls, npy_obj):
+
+    def gal_dict_from_npy(npy_obj):
         gal_dict = np.load(npy_obj, allow_pickle=True).item()
         return gal_dict
 
-
-def calc_lum_cgs(phE: np.ndarray, Aeff: float, Tobs: float, dLum: float,
-             Emin: float = .5, Emax: float = 8):
-    """
-    Calculate luminosity in energy range [Emin,Emax] from photon
-    energy array phE
-    Returns luminosity in erg/s
-    -----
-    Aeff: effective area in cm^2
-    Tobs: exposure time in s
-    dLum: luminosity distance in cm
-    Emin: in keV
-    Emax: in keV
-    """
-    if not isinstance(phE, np.ndarray):
-        phE = np.array(phE)
-    dLum2 = 4*np.pi*(dLum)**2/Aeff/Tobs
-    Emask = (phE >= Emin) & (phE <= Emax)
-
-    return np.sum(phE[Emask])*dLum2*KEV_TO_ERG
-
-def get_num_XRB_base( Xph_base: str, sFSUB: str, Tobs: float = 1., Aeff: float = 1., Dlum: float = 1., Lc: float = -1.):
-    """
-    Returns tuple containing number of XRBs and array of luminosities
-    """
-    fp_hxb = Xph_base+"gal"+sFSUB+"HXB.fits"
-    fp_hxrb = Xph_base+"gal"+sFSUB+"HXRB.fits"
-    fp_lxb = Xph_base+"gal"+sFSUB+"LXB.fits"
-    fp_lxrb = Xph_base+"gal"+sFSUB+"LXRB.fits"
-    fp_xrb = Xph_base+"gal"+sFSUB+"XRB.fits"
-
-    # include cases where XRB types are not separated
-    try:
-        tbl_hxb = Table.read(fp_hxb)
-    except FileNotFoundError:
-        try:
-            tbl_hxb = Table.read(fp_hxrb)
-        except FileNotFoundError:
-            try:
-                tbl_hxb = Table.read(fp_xrb)
-            except FileNotFoundError:
-                tbl_hxb = {}
-                tbl_hxb["PHOTON_ENERGY"] = np.array([])
-
-    try:
-        tbl_lxb = Table.read(fp_lxb)
-    except FileNotFoundError:
-        try: 
-            tbl_lxb = Table.read(fp_lxrb)
-        except FileNotFoundError:
-            tbl_lxb = {}
-            tbl_lxb["PHOTON_ENERGY"] = np.array([])
-
-    phE_h = np.array( tbl_hxb["PHOTON_ENERGY"] )
-    phE_l = np.array( tbl_lxb["PHOTON_ENERGY"] )
-
-    indx_pckg_end_h = np.where( np.diff(phE_h) < 0)[0]
-    indx_pckg_end_l = np.where( np.diff(phE_l) < 0)[0]
-    numHXB = len(indx_pckg_end_h)
-    numLXB = len(indx_pckg_end_l)
-
-    lumH = np.zeros(numHXB)
-    lumL = np.zeros(numLXB)
-    
-    for i in range(numHXB):
-        if i == 0:
-            lumH[i] = calc_lum_cgs( phE_h[0:indx_pckg_end_h[0]+1], Tobs, Aeff, Dlum )
-        else:
-            lumH[i] = calc_lum_cgs( phE_h[indx_pckg_end_h[i-1]+1:indx_pckg_end_h[i]+1], Tobs, Aeff, Dlum )
-
-    for i in range(numLXB):
-        if i == 0:
-            lumL[i] = calc_lum_cgs( phE_l[0:indx_pckg_end_l[0]+1], Tobs, Aeff, Dlum )
-        else:
-            lumL[i] = calc_lum_cgs( phE_l[indx_pckg_end_l[i-1]+1:indx_pckg_end_l[i]+1], Tobs, Aeff, Dlum )
-
-    if Lc < 0:
-        return [(numHXB, lumH), (numLXB, lumL)]
-    else:
-        lumH = lumH[lumH>Lc]
-        lumL = lumL[lumL>Lc]
-        numH = len(lumH)
-        numL = len(lumL)
-        return [(numH, lumH), (numL, lumL)]
-
-def get_num_XRB( phE_h: list, Tobs: float = 1., Aeff: float = 1., Dlum: float = 1., Lc: float = -1.):
-    """
-    Returns tuple containing number of XRBs and array of luminosities
-    """
-
-    indx_pckg_end_h = np.where( np.diff(phE_h) < 0)[0]
-    numHXB = len(indx_pckg_end_h)
-
-    lumH = np.zeros(numHXB)
-    
-    for i in range(numHXB):
-        if i == 0:
-            lumH[i] = calc_lum_cgs( phE_h[0:indx_pckg_end_h[0]+1], Tobs, Aeff, Dlum )
-        else:
-            lumH[i] = calc_lum_cgs( phE_h[indx_pckg_end_h[i-1]+1:indx_pckg_end_h[i]+1], Tobs, Aeff, Dlum )
-
-    if Lc < 0:
-        return (numHXB, lumH)
-    else:
-        lumH = lumH[lumH>Lc]
-        numH = len(lumH)
-        return (numH, lumH)
-
-# @njit
-# def get_num_XRB( phE: np.ndarray, Tobs: float = 1., Aeff: float = 1., Dlum: float = 1., Lc: float = -1.):
-#     """
-#     Returns tuple containing number of XRBs and array of luminosities
-#     """
-#     numXRB = len( np.diff(phE)[np.diff(phE)<0] )
-#     debugNum = 0
-#     lum = np.zeros( numXRB+1 )
-#     start = 0
-
-#     for i in range(len(phE)):
-#         if i >= len(phE)-1:
-#             lum[debugNum] = calc_lum(phE[start:i+1], Tobs, Aeff, Dlum)
-#             # print(i,lum[debugNum],numXRB,debugNum)
-#             break
-#         if phE[i] > phE[i+1]:
-#             lum[debugNum] = calc_lum(phE[start:i+1], Tobs, Aeff, Dlum)
-#             # print(i,lum[debugNum],numXRB,debugNum)
-#             debugNum += 1
-#             start = i+1
-    
-#     return (debugNum, lum)
-
              
 
-def calc_galLumX(Xph_base: str, sFSUB: str, Tobs: float = 1., Aeff: float = 1., Dlum: float = 1.):
-    fp_gas = Xph_base+"gal"+sFSUB+"GAS.fits"
-    fp_agn = Xph_base+"gal"+sFSUB+"AGN.fits"
-    fp_hxb = Xph_base+"gal"+sFSUB+"HXB.fits"
-    fp_lxb = Xph_base+"gal"+sFSUB+"LXB.fits"
-    tbl_gas = Table.read(fp_gas)
-    tbl_agn = Table.read(fp_agn)
-    tbl_lxb = Table.read(fp_hxb)
-    tbl_hxb = Table.read(fp_lxb)
-
-    phE_g = np.array( tbl_gas["PHOTON_ENERGY"] )
-    phE_a = np.array( tbl_agn["PHOTON_ENERGY"] )
-    phE_h = np.array( tbl_hxb["PHOTON_ENERGY"] )
-    phE_l = np.array( tbl_lxb["PHOTON_ENERGY"] )
-        
-    collect = (phE_g, phE_a, phE_h, phE_l)
-
-    # .5-50keV, 0.5-2keV, 0.5-8keV, 0.5-10keV, 2-8keV, 2-10keV
-
-    XrayLum = {}
-    for key,x in zip(["agn","gas","hxb","lxb"],collect):
-        tot = (x < 50.) & (x > .5)
-        sx = (x < 2.) & (x > .5)
-        mxq = (x < 8.) & (x > .5)
-        mxp = (x < 10.) & (x > .5)
-        hxq = (x < 8.) & (x > 2.)
-        hxp = (x < 10.) & (x > 2.)
-
-        XrayLum[key] = ( calc_lum_cgs(x[tot],Tobs,Aeff,Dlum), calc_lum_cgs(x[sx],Tobs,Aeff,Dlum), calc_lum_cgs(x[mxq],Tobs,Aeff,Dlum), calc_lum_cgs(x[mxp],Tobs,Aeff,Dlum), calc_lum_cgs(x[hxq],Tobs,Aeff,Dlum), calc_lum_cgs(x[hxp],Tobs,Aeff,Dlum) )
-
-    return XrayLum
-
-def get_spectra(Xph_base: str, sFSUB: str, Nbin: int = 500, Emin: float = .5, Emax: float = 10., norm = False, Tobs: float = -1, Aeff: float = -1):
-    fp_gas = Xph_base+"gal"+sFSUB+"GAS.fits"
-    fp_agn = Xph_base+"gal"+sFSUB+"AGN.fits"
-    fp_hxb = Xph_base+"gal"+sFSUB+"HXB.fits"
-    fp_lxb = Xph_base+"gal"+sFSUB+"LXB.fits"
-    fp_xrb = Xph_base+"gal"+sFSUB+"XRB.fits"
-
-    try:
-        tbl_gas = Table.read(fp_gas)
-    except FileNotFoundError:
-        tbl_gas = {}
-        tbl_gas["PHOTON_ENERGY"] = np.array([])
-
-    try:
-        tbl_agn = Table.read(fp_agn)
-    except FileNotFoundError:
-        tbl_agn = {}
-        tbl_agn["PHOTON_ENERGY"] = np.array([])
-
-    # include cases where XRB types are not separated
-    try:
-        tbl_hxb = Table.read(fp_hxb)
-    except FileNotFoundError:
-        try:
-            tbl_hxb = Table.read(fp_xrb)
-        except FileNotFoundError:
-            tbl_hxb = {}
-            tbl_hxb["PHOTON_ENERGY"] = np.array([])
-
-    try:
-        tbl_lxb = Table.read(fp_lxb)
-    except FileNotFoundError:
-        tbl_lxb = {}
-        tbl_lxb["PHOTON_ENERGY"] = np.array([])
-
-    phE_g = np.array( tbl_gas["PHOTON_ENERGY"] )
-    phE_a = np.array( tbl_agn["PHOTON_ENERGY"] )
-    phE_h = np.array( tbl_hxb["PHOTON_ENERGY"] )
-    phE_l = np.array( tbl_lxb["PHOTON_ENERGY"] )
-
-    spec_bins = np.logspace(np.log10(Emin),np.log10(Emax),Nbin)
-    spec_g, _ = np.histogram(phE_g,spec_bins)
-    spec_a, _ = np.histogram(phE_a,spec_bins)
-    spec_h, _ = np.histogram(phE_h,spec_bins)
-    spec_l, _ = np.histogram(phE_l,spec_bins)
-
-    if norm:
-        numph = len(phE_g) + len(phE_a) + len(phE_h) + len(phE_l)
-        return (spec_bins, spec_g / numph, spec_a / numph, spec_h / numph, spec_l / numph)
-    else:
-        return (spec_bins, spec_g, spec_a, spec_h, spec_l)
-
-def get_ph_pos(Xph_base: str, sFSUB: str, Emin: float = .5, Emax: float = 10.):
-    fp_gas = Xph_base+"gal"+sFSUB+"GAS.fits"
-    fp_agn = Xph_base+"gal"+sFSUB+"AGN.fits"
-    fp_hxb = Xph_base+"gal"+sFSUB+"HXB.fits"
-    fp_lxb = Xph_base+"gal"+sFSUB+"LXB.fits"
-    fp_xrb = Xph_base+"gal"+sFSUB+"XRB.fits"
-
-    try:
-        tbl_gas = Table.read(fp_gas)
-    except FileNotFoundError:
-        tbl_gas = {}
-        tbl_gas["POS_X"] = np.array([])
-        tbl_gas["POS_Y"] = np.array([])
-
-    try:
-        tbl_agn = Table.read(fp_agn)
-    except FileNotFoundError:
-        tbl_agn = {}
-        tbl_agn["POS_X"] = np.array([])
-        tbl_agn["POS_Y"] = np.array([])
-
-    # include cases where XRB types are not separated
-    try:
-        tbl_hxb = Table.read(fp_hxb)
-    except FileNotFoundError:
-        try:
-            tbl_hxb = Table.read(fp_xrb)
-        except FileNotFoundError:
-            tbl_hxb = {}
-            tbl_hxb["POS_X"] = np.array([])
-            tbl_hxb["POS_Y"] = np.array([])
-
-    try:
-        tbl_lxb = Table.read(fp_lxb)
-    except FileNotFoundError:
-        tbl_lxb = {}
-        tbl_lxb["POS_X"] = np.array([])
-        tbl_lxb["POS_Y"] = np.array([])
-
-    # Create position vectors (x,y): np.array([[x1,y1],[x2,y2],...,[xn,yn]])
-    pos_g = np.column_stack( ( tbl_gas["POS_X"], tbl_gas["POS_Y"] ) )
-    pos_a = np.column_stack( ( tbl_agn["POS_X"], tbl_agn["POS_Y"] ) )
-    pos_h = np.column_stack( ( tbl_hxb["POS_X"], tbl_hxb["POS_Y"] ) )
-    pos_l = np.column_stack( ( tbl_lxb["POS_X"], tbl_lxb["POS_Y"] ) )
-
-
-
 if __name__ == "__main__":
-    
-    import matplotlib.pyplot as plt
-    import matplotlib.colors as mclr
-    import xrb_main as xm
-    import matplotlib.ticker as ticker
-    from matplotlib import cm
 
     groupbase = "/home/lcladm/Studium/Masterarbeit/test/dorc/uhr_test/groups_136/sub_136"
     snapbase = "/home/lcladm/Studium/Masterarbeit/test/dorc/uhr_test/snapdir_136/snap_136"
-    testsnapbase = "/home/lcladm/Studium/Masterarbeit/test/dorc/uhr_test/snapdir_136/test_snap_136"
-    phbase = "/home/lcladm/Studium/Masterarbeit/R136_AGN_fix/fits/"
-    phbase_2 = "/home/lcladm/Studium/Masterarbeit/R333/fits/"
-    phbase_3 = "./fits_g/"
-
 
     head = g3.GadgetFile(snapbase+".0").header
-    # f = g3.GadgetFile(snapbase+".0")
-    # head = f.header
-    # f.write_header
-    # positions = f.read_new("POS ",-1) - 100.
-    # f.header.npart = [40,0,0,0,0,0]
-    # f.write_block("POS ", -1, positions, filename=testsnapbase+".0")
-    # print(f.header.npartTotal)
-    # pos = g3.GadgetFile(testsnapbase+".0").read_new("POS ",-1)
-    # print(g3.GadgetFile(testsnapbase+".0").header.npart)
-    # print(len(pos))
-    # positions = f.read_new("POS ",-1)
-    # print(positions-pos)
-    # print(g3.GadgetFile(testsnapbase+".0").header.npartTotal)
-    # input()
     h = head.HubbleParam
     zz = head.redshift
 
@@ -1000,173 +644,3 @@ if __name__ == "__main__":
 
     # np.save("gal_data.npy", gal_dict)
 
-    # exit()
-
-    logFeH_s = []
-    Mstar = []
-    bVal = []
-    nxb = []
-    i=0
-    gal_dict = Galaxy.gal_dict_from_npy("gal_data.npy")
-    for key in tqdm.tqdm(gal_dict.keys()):
-        x = gal_dict[key]
-        #x.load_FlatLCDM()
-
-        # stars = x.stars
-        # age = x.age_part( stars["AGE "] )
-        # ac = (age <= 100)
-        # mass = stars["MASS"][ac]
-        # if len(mass) == 0:
-        #     continue
-        # iM = x.mass_to_phys(stars["iM  "])[ac]
-        # Zs = x.mass_to_phys(stars["Zs  "])[ac]
-
-        # logFeH_st = np.log10( Zs[:,-2] / 55.85 / (iM - np.sum(Zs,axis=1)) ) + 4.33
-        # wh = Zs[:,-2] > 0
-        # logFeH_s.append(np.average(logFeH_st[wh], weights = mass[wh]))
-        logFeH_s.append( x.logOH12_s )
-        Mstar.append(np.log10(x.Mstar))
-        ll = get_num_XRB_base(phbase,x.sFSUB,1.e6,1.e3,x.lum_dist_z(x.redshift),Lc=1.e38)
-        NXB = ll[0][0]
-        nxb.append(NXB)
-        bVal.append(x.bVal)
-        break
-        
-
-
-        #plt.plot(np.log10(x.Mstar),logFeH_s,lw=0.,c=x.bVal,marker='o',ms=3.,norm=)
-    plt.scatter(Mstar,logFeH_s,c=bVal,marker='o',s=15.,cmap='jet_r')
-    cb = plt.colorbar()
-    cb.set_label(label="$b$-val",fontsize=14)
-    plt.ylabel(r"[Fe/H]",fontsize=14)
-    plt.xlabel(r"$\log(M_*)$",fontsize=14)
-    plt.show()
-
-    plt.scatter(logFeH_s,nxb,c=bVal,marker='o',s=15.,cmap='jet_r')
-    cb = plt.colorbar()
-    cb.set_label(label="$b$-val",fontsize=14)
-    plt.xlabel(r"12 + [O/H]",fontsize=14)
-    plt.ylabel(r"$N_{\mathrm{XRB}}(>10^{38}\, \mathrm{erg\,s^{-1}})$",fontsize=14)
-    plt.show()
-
-    hxb = []
-    Z = []
-    L = []
-    LL = []
-    LerrUp = []
-    LerrLw = []
-    SFR = []
-    M25K = []
-    sSFR = []
-    for key in tqdm.tqdm(gal_dict.keys()):
-        x = gal_dict[key]
-        # gas = x.get_gas()
-        stars = x.get_stars()
-        # rad1 = x.pos_to_phys(g3.to_spherical(gas['POS '],x.center).T[0])
-        # mask1 = rad1 < x.pos_to_phys(x.R25K)
-        rad2 = x.pos_to_phys(g3.to_spherical(stars['POS '],x.center).T[0])
-        age = x.age_part(stars["AGE "])
-        mask2 = (rad2 < x.pos_to_phys(x.R25K)) & (age<100)
-        m25k = x.mass_to_phys(np.sum(stars["MASS"][(rad2 < x.pos_to_phys(x.R25K))]))
-        M25K.append( m25k )
-        aSFR = x.mass_to_phys(np.sum(stars["MASS"][mask2]))/.95e8
-        
-        # fp_hxrb = phbase_3+"gal"+str(x.FSUB)+"HXRB.fits"
-        # tbl_hxrb = Table.read(fp_hxrb)
-        fp_xrb = phbase+"gal"+x.sFSUB+"XRB.fits"
-        fp_gas = phbase+"gal"+x.sFSUB+"GAS.fits"
-        try:
-            tbl_hxrb = Table.read(fp_xrb)
-            tbl_gas = Table.read(fp_gas)
-        except FileNotFoundError:
-            continue
-        Xph_xrb = np.array(tbl_hxrb["PHOTON_ENERGY"])
-        Xph_xrb = Xph_xrb[(Xph_xrb>=.5)&(Xph_xrb<8.)]
-        Xph_gas = np.array(tbl_gas["PHOTON_ENERGY"])
-        Xph_gas = Xph_gas[(Xph_gas>=.5)&(Xph_gas<8.)]
-        # phx_pos = np.column_stack(tbl_hxrb["POS_X"],tbl_hxrb["POS_Y"])
-        NXB, lum = get_num_XRB(Xph_xrb, 1.e6, 1.e3, x.lum_dist_z(x.redshift), Lc=1.e39)
-        Lx = calc_lum_cgs(Xph_xrb,1.e6,1.e3,x.lum_dist_z(zz))
-        Lg = calc_lum_cgs(Xph_gas,1.e6,1.e3,x.lum_dist_z(zz))
-        
-        # print(np.sum(gas['SFR '][mask1]),x.SFR,aSFR,np.log10(Lx),np.log10(Lx/x.SFR),np.log10(Lx/aSFR),x.logOH12_s,x.logOH12_g)
-        # if x.SFR <= 0.:
-        if aSFR <= 0.:
-            # continue
-            hxb.append((NXB))
-            SFR.append(0)
-            Z.append(x.logOH12_s)
-            L.append(Lx+Lg)
-            LL.append(Lx)
-            sSFR.append( aSFR/m25k )
-            
-        else:
-            hxb.append((NXB/aSFR))
-            SFR.append(aSFR)
-            Z.append(x.logOH12_s)
-            L.append((Lx+Lg)/aSFR)
-            LL.append(Lx/aSFR)
-            sSFR.append( aSFR/m25k )
-            
-        if int(key) >= 88000:
-            break
-        
-    
-
-    # cmap = cm.jet()
-    norm=mclr.LogNorm(vmin=1.e-3,vmax=200.,clip=True)
-    curve_samp = np.load("Lehm21_samp.npy")
-    # print(cm.jet(norm(1)))
-
-    OH = np.linspace(6.8,9.6,41)
-    ssfr = [.01,.1,1.,10,100]
-    modelN = np.zeros_like(OH)
-    ind = np.where(xm.Lehmer21().lumarr>=1.e39)[0][0]
-    for i,oh in enumerate(OH):
-        modelN[i] = xm.Lehmer21(logOH12=oh).model()[ind]
-    plt.plot(OH,modelN,c='k')
-    plt.scatter(Z,hxb,c=SFR,alpha=.5,marker='o',s=15.,norm=mclr.LogNorm(vmin=1.e-3,vmax=200.,clip=True),cmap='jet_r')
-    cb = plt.colorbar()
-    cb.set_label(label=r"$\mathrm{SFR}\,[M_{\odot}\, \mathrm{yr}^{-1}]$",fontsize=14)
-    cb.ax.get_yaxis().set_major_formatter(ticker.ScalarFormatter())
-    plt.xlabel(r"12 + [O/H]",fontsize=14)
-    plt.ylabel(r"$N_{\mathrm{HXB}}(>10^{39}\, \mathrm{erg\,s^{-1}})$ / SFR",fontsize=14)
-    plt.show()
-
-    modelL = np.zeros_like(OH)
-    Lu = [40.21,40.25,40.25,40.22,40.16,40.06,39.94,39.8,39.64,39.49,39.34,39.21]
-    err = [[.66,.5,.38,.28,.2,.15,.11,.09,.1,.12,.13,.12],[.69,.53,.4,.29,.21,.15,.12,.1,.11,.13,.15,.16]]
-    errOH = np.linspace(7,9.2,12)
-    for i,oh in enumerate(OH):
-        modelL[i] = xm.Lehmer21(logOH12=oh).model(bLum=True)[0]
-    plt.plot(OH,np.log10(modelL)+38,c='k')
-    plt.fill_between(errOH,np.array(Lu)+np.array(err[0]),np.array(Lu)-np.array(err[1]),color='k',alpha=.2,interpolate=True)
-    for j,sfc in enumerate(curve_samp):
-        if j==2 or j==1 or j==0:
-            plt.plot(errOH,np.log10(sfc[0]),c=cm.jet_r(norm(ssfr[j])),alpha=.9)
-            plt.fill_between(errOH,np.log10(sfc[0]-sfc[1]),np.log10(sfc[0]+sfc[2]),color=cm.jet_r(norm(ssfr[j])),alpha=.2,interpolate=True)
-        
-    plt.scatter(Z,np.log10(LL),c=SFR,alpha=.6,marker='o',s=15.,norm=mclr.LogNorm(vmin=1.e-3,vmax=200.,clip=True),cmap='jet_r')
-    # plt.errorbar(Z,np.log10(L),yerr=[np.log10(np.array(L))-np.log10(np.array(LerrLw)), np.log10(np.array(LerrUp))-np.log10(np.array(L))], ms=8.,capsize=3.,capthick=1.,ecolor='k')
-    cb = plt.colorbar()
-    cb.set_label(label=r"$\mathrm{SFR}\,[M_{\odot}\, \mathrm{yr}^{-1}]$",fontsize=14)
-    cb.ax.get_yaxis().set_major_formatter(ticker.ScalarFormatter())
-    plt.xlabel(r"12 + [O/H]",fontsize=14)
-    plt.ylabel(r"$\log(L_{\mathrm{HXB}}^{.5-8\,\mathrm{keV}} / \mathrm{SFR})$",fontsize=14)
-    plt.show()
-
-    def curve(sss):
-        beta = 10**39.92
-        alpha = 10**29.857
-        return np.log10( (alpha/sss) + (beta))
-    plt.plot(np.log10(np.logspace(-14,-8,500)),curve(np.array(np.logspace(-14,-8,500))),c='k' )
-    plt.scatter(np.log10(sSFR),np.log10(L),c=SFR,alpha=.6,marker='o',s=15.,norm=mclr.LogNorm(vmin=1.e-3,vmax=200.,clip=True),cmap='jet_r')
-    cb = plt.colorbar()
-    cb.set_label(label=r"$\mathrm{SFR}\,[M_{\odot}\, \mathrm{yr}^{-1}]$",fontsize=14)
-    cb.ax.get_yaxis().set_major_formatter(ticker.ScalarFormatter())
-    plt.xlabel(r"$\log(\mathrm{sSFR})$",fontsize=14)
-    plt.ylabel(r"$\log(L_{\mathrm{X}}^{.5-8\,\mathrm{keV}} / \mathrm{SFR})$",fontsize=14)
-    plt.show()
-    
-
-    #x.add_luminosities()

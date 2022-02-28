@@ -1,23 +1,7 @@
 import numpy as np
 from numba import njit
-from scipy.special import gammaincc, gamma
-import xrb_units as xu
-
-def GammaIncc(a,x):
-    """
-    Incomplete upper Gamma function optimized to also work with a < 0
-    (native scipy functions don't allow this) using recursion.
-    See "http://en.wikipedia.org/wiki/Incomplete_gamma_function#Properties"
-    Used for integration of HMXB LF model from Lehmer+21 of the form:
-
-    exp(-x/b) * x**(-a)  >>>> integration >>>>  -b**(1-a)*Gamma(1-a,x/b) + C
-    """
-    
-    if a >= 0.:
-        res = gammaincc(a,x)*gamma(a)
-    else:
-        res = ( GammaIncc(a+1,x)-x**(a)*np.exp(-x) ) / a
-    return res
+from PhoxUtil.Utils import GammaIncc
+import PhoxUtil.xrb_units as xu
 
 class XRB:
     """
@@ -944,32 +928,6 @@ class Lehmer21(XRB):
         arr = self.vec_calc_Lehmer21( self.lumarr/1.e38, *par, self.logOH12 )
 
         return arr * self.SFR
-
-
-import itertools
-
-def model_err(mod: np.ufunc, LumArr: np.ndarray, args: tuple, logOH12: float) -> tuple:
-    """
-    input args must have the form ((a,aL,au),(b,bL,bU),...) in order to retain the parameter ordering
-    for the underlying model
-    """
-    comb: tuple = itertools.product(*args) # tuple of tuples
-    calc = []
-    for combi in comb:
-        try:
-            calc.append( mod( LumArr,*combi, logOH12 ) )
-        except TypeError:
-            calc.append( mod(lum_in=LumArr,*combi) )
-    
-    print(len(calc))
-    print(len(calc[0]))
-    errU = np.zeros(len(calc[0]))
-    errL = np.zeros(len(calc[0]))
-    for i in range(len(calc[0])):
-        errU[i] =  np.amax( [z[i] for z in calc] )
-        errL[i] =  np.amin( [z[i] for z in calc] )
-    return (errU, errL)
-
 
 
 

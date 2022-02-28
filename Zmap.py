@@ -1,5 +1,4 @@
-import galaxies as gal
-from galaxies import Galaxy
+from PhoxUtil.galaxies import Galaxy
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -35,46 +34,42 @@ h = head.HubbleParam
 zz = head.redshift
 
 gal_dict = Galaxy.gal_dict_from_npy("gal_data.npy")
-for key,x in gal_dict.items():
-    # if int(key) == 13633:
-    if int(key) == 13633:
-        x.snapbase = snapbase
-        Z,m = x.get_st_met_idv(bWeight=True)
-        stars = x.get_stars()
-        # gas = x.get_gas()
-        # sfr = gas["SFR "]
-        # print(sfr[sfr>0])
-        # print(np.median(sfr[sfr>0]),np.percentile(sfr[sfr>0],(16,86)))
-        pos = x.pos_to_phys(stars["POS "] - x.center)
-        age = stars["AGE "]
-        hsms = x.pos_to_phys( stars["HSMS"] )
-        # hsml = x.pos_to_phys( gas["HSML"] )
-        rad = g3.to_spherical(pos,[0,0,0]).T[0]
-        R25K = x.pos_to_phys(x.R25K)
-        print(R25K,x.center)
-        # print(f"{x.Mstar:.2e}")
-        mask = (rad < R25K*5) #& (x.age_part(age)<100) 
-        xpos = pos[:,0][mask]
-        ypos = pos[:,1][mask]
-        pos = pos[mask]
-        hsms = hsms[mask]
-        age = age[mask]
-        # print(hsms)
-        # print(hsml)
-        Z = Z[mask]
-        m = x.mass_to_phys(m[mask])
-        fpH = phbase_new+f"gal{x.FSUB:0>6d}HXB.fits"
-        fpL = phbase_new+f"gal{x.FSUB:0>6d}LXB.fits"
-        tblH = Table.read(fpH)
-        tblL = Table.read(fpL)
-        xphH = tblH["POS_X"]
-        yphH = tblH["POS_Y"]
-        xphL = tblL["POS_X"]
-        yphL = tblL["POS_Y"]
-    else:
-        continue
+x = gal_dict["013633"]
+x.snapbase = snapbase
+Z,m = x.get_st_met_idv(bWeight=True)
+stars = x.get_stars()
+# gas = x.get_gas()
+# sfr = gas["SFR "]
+# print(sfr[sfr>0])
+# print(np.median(sfr[sfr>0]),np.percentile(sfr[sfr>0],(16,86)))
+pos = x.pos_to_phys(stars["POS "] - x.center)
+age = stars["AGE "]
+hsms = x.pos_to_phys( stars["HSMS"] )
+# hsml = x.pos_to_phys( gas["HSML"] )
+rad = g3.to_spherical(pos,[0,0,0]).T[0]
+R25K = x.pos_to_phys(x.R25K)
+print(R25K,x.center)
+# print(f"{x.Mstar:.2e}")
+mask = (rad < R25K*5) #& (x.age_part(age)<100) 
+xpos = pos[:,0][mask]
+ypos = pos[:,1][mask]
+pos = pos[mask]
+hsms = hsms[mask]
+age = age[mask]
+# print(hsms)
+# print(hsml)
+Z = Z[mask]
+m = x.mass_to_phys(m[mask])
+fpH = phbase_new+f"gal{x.FSUB:0>6d}HXB.fits"
+fpL = phbase_new+f"gal{x.FSUB:0>6d}LXB.fits"
+tblH = Table.read(fpH)
+tblL = Table.read(fpL)
+xphH = tblH["POS_X"]
+yphH = tblH["POS_Y"]
+xphL = tblL["POS_X"]
+yphL = tblL["POS_Y"]
 
-import grid2D as g2D
+import PhoxUtil.grid2D as g2D
 
 Nbins = 128*2
 R25K = R25K/2
@@ -105,7 +100,7 @@ levels = [0.68,.9,.95,.99]
 
 # hm = hsms>2.8*np.mean(hsms)
 # 1/(4/3*hsms[:]**3*3.141526)
-# hsms = hsms/4.
+hsms = hsms/4.
 rho = m[:]/(4/3*(hsms[:]/1)**3*3.141526)
 ones = np.ones_like(m[:]/rho[:]/hsms[:]**3.)
 print(len(ones))

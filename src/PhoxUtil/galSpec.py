@@ -5,13 +5,16 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mclr
 import matplotlib.ticker as ticker
 # import grid2D as g2D
-import xrb_main as xm
+import PhoxUtil.xrb_main as xm
 xrb = xm.Mineo12S()
 model = xrb.model(bLum=True)[0]*1.e38
 xrb2 = xm.Lehmer21()
 model2 = xrb2.model(bLum=True)[0]*1.e38
-from galaxies import Galaxy, Magneticum, get_num_XRB
+from PhoxUtil.galaxies import Galaxy
+from PhoxUtil.phox_data import *
+from PhoxUtil.Utils import calc_bin_centers, calc_flux_per_bin, calc_lum_cgs, get_num_XRB
 from astropy.table import Table
+from tqdm import tqdm
 
 ### UNIT CONVERSION ###
 KEV_TO_ERG = 1.60218e-9
@@ -38,42 +41,6 @@ mpl.rcParams["xtick.labelsize"] = 12
 mpl.rcParams["ytick.direction"] = "in"
 mpl.rcParams["ytick.labelsize"] = 12
 
-
-def calc_lum_cgs(phE: np.ndarray, Aeff: float, Tobs: float, dLum: float,
-             Emin: float = .5, Emax: float = 8):
-    """
-    Calculate luminosity in energy range [Emin,Emax] from photon
-    energy array phE
-    Returns luminosity in erg/s
-    -----
-    Aeff: effective area in cm^2
-    Tobs: exposure time in s
-    dLum: luminosity distance in cm
-    Emin: in keV
-    Emax: in keV
-    """
-    if not isinstance(phE, np.ndarray):
-        phE = np.array(phE)
-    dLum2 = 4*np.pi*(dLum)**2/Aeff/Tobs
-    Emask = (phE >= Emin) & (phE <= Emax)
-
-    return np.sum(phE[Emask])*dLum2*KEV_TO_ERG
-
-def calc_flux_per_bin(bins: np.ndarray, hist: np.ndarray,
-                             Aeff: float = 1., Tobs: float = 1.):
-    """
-    Calculate flux per energy bin given a raw photon count
-    histogram from a spectrum
-    -----
-    bins: bin edges for energy range (dim=N+1)
-    hist: photon counts per energy bin
-    Aeff: effective area in 'cm^2'
-    Tobs: exposure time in 's'
-    """
-    bin_w = np.diff(bins)
-    bin_c = calc_bin_centers(bins)
-    flux_hist = hist / bin_w / Aeff / Tobs * bin_c**2
-    return flux_hist
 
 def yield_photon_energy(filename: str, Emin=0.,Emax=50.1):
     """
@@ -109,11 +76,6 @@ def yield_photon_pos(filename: str):
     
     return pos_x,pos_y
     
-def calc_bin_centers(edges: np.ndarray):
-    """
-    Returns bin centers for histograms
-    """
-    return edges[:-1] + np.diff(edges)/2.
 
 def plot_contour_log(xdata: np.ndarray, ydata: np.ndarray, color: str,
                 kde_range: list = None, ax=None):
@@ -809,11 +771,9 @@ class GalaxyData:
     Load galaxy data from file path
     """
     def __init__(self, fp: str, stop: int = 2000) -> None:
-        from helper import phox_head
-        from tqdm import tqdm
-        h           = phox_head(fp+"phoxdir_136/GASphotonsE_136.0.dat")
-        dist        = h.Da*(1+h.zz_obs)**2 # in cm
-        gal_dict    = Galaxy.gal_dict_from_npy("gal_data.npy")
+        phxf        = phE_file(fp+"phoxdir_136/GASphotonsE_136.0.dat")
+        dist        = phxf.Da*(1+phxf.zz_obs)**2 # in cm
+        gal_dict    = Galaxy.gal_dict_from_npy("/home/moon/vladutescu/Projects/XRBs/gal_data.npy")
         if stop > len(gal_dict):
             stop = len(gal_dict)
         sfr_arr     = np.zeros(len(gal_dict))
@@ -861,9 +821,9 @@ class GalaxyData:
             phEg = yield_photon_energy(fpG)
             phEl = yield_photon_energy(fpL)
 
-            xlf_h[num] = xm.XRB().XLF(lumarr,get_num_XRB(phEh,h.time,h.area,dist)[1])/sfr_arr[num]
-            xlf_l[num] = xm.XRB().XLF(lumarr,get_num_XRB(phEl,h.time,h.area,dist)[1])/gal.Mstar*1e11
-            xlf_z[num] = xm.XRB().XLF(lumarr,get_num_XRB(phEz,h.time,h.area,dist)[1])/sfr_arr[num]
+            xlf_h[num] = xm.XRB().XLF(lumarr,get_num_XRB(phEh,phxf.time,phxf.area,dist)[1])/sfr_arr[num]
+            xlf_l[num] = xm.XRB().XLF(lumarr,get_num_XRB(phEl,phxf.time,phxf.area,dist)[1])/gal.Mstar*1e11
+            xlf_z[num] = xm.XRB().XLF(lumarr,get_num_XRB(phEz,phxf.time,phxf.area,dist)[1])/sfr_arr[num]
 
             phEh_len[num] = [ len(phEh[(phEh>=.5)&(phEh<=8.)]), len(phEh[(phEh>=.5)&(phEh<=2.)]), len(phEh[(phEh>=2.)&(phEh<=8.)]) ]
             phEz_len[num] = [ len(phEz[(phEz>=.5)&(phEz<=8.)]), len(phEz[(phEz>=.5)&(phEz<=2.)]), len(phEz[(phEz>=2.)&(phEz<=8.)]) ]
@@ -875,10 +835,10 @@ class GalaxyData:
             phEl_hist[num] = calc_flux_per_bin(bins,np.histogram(phEl,bins=bins)[0])
             phEg_hist[num] = calc_flux_per_bin(bins,np.histogram(phEg,bins=bins)[0])
             
-            LxZ_arr[num] = calc_lum_cgs(phEz,h.area,h.time,dist)
-            LxH_arr[num] = calc_lum_cgs(phEh,h.area,h.time,dist)
-            LxG_arr[num] = calc_lum_cgs(phEg,h.area,h.time,dist,Emax=2.)
-            LxL_arr[num] = calc_lum_cgs(phEl,h.area,h.time,dist)
+            LxZ_arr[num] = calc_lum_cgs(phEz,phxf.area,phxf.time,dist)
+            LxH_arr[num] = calc_lum_cgs(phEh,phxf.area,phxf.time,dist)
+            LxG_arr[num] = calc_lum_cgs(phEg,phxf.area,phxf.time,dist,Emax=2.)
+            LxL_arr[num] = calc_lum_cgs(phEl,phxf.area,phxf.time,dist)
 
             num += 1
 
@@ -902,8 +862,8 @@ class GalaxyData:
         self.xlf_l          = xlf_l[:num]
         self.xlf_z          = xlf_z[:num]
         self.lumarr         = lumarr
-        self.area           = h.area
-        self.time           = h.time
+        self.area           = phxf.area
+        self.time           = phxf.time
         self.dist           = dist
 
 if __name__ == '__main__':
