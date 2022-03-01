@@ -27,7 +27,7 @@ clrLXB = 'yellowgreen'
 clrHXB = 'darkgreen'
 clrGAS = 'royalblue'
 
-print("Done Importing Modules")
+# print("Done Importing Modules")
 
 mpl.rcParams["backend"] = "Qt5Agg"
 mpl.rcParams["font.family"] = "serif"
@@ -868,16 +868,5 @@ class GalaxyData:
 
 if __name__ == '__main__':
     pass
-    # fp = "/ptmp2/vladutescu/paper21/seed/919/"
-    # np.random.seed(1234)
-    # gd = GalaxyData(fp,15)    
-
-    # mean_XLF(gd)
-    # plot_average_spec(gd,msk)
-    # plot_count_ratio(gd,msk)
-    # plot_Lx_SFR(gd,msk,bGAS=True)
-    # plot_Lx_SFR(gd,msk)
-    # plot_Lx_OH(gd)
-    # plot_Lx_Mstar(gd)
-    # plot_Lehmer16(gd)
+    
     

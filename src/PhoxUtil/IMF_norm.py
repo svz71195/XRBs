@@ -1,6 +1,6 @@
 import numpy as np
 import helper
-import xrb_main as xm
+import PhoxUtil.xrb_main as xm
 import matplotlib.pyplot as plt
 from matplotlib.ticker import StrMethodFormatter
 
@@ -167,7 +167,7 @@ if __name__ == '__main__':
     imf_fac = helper.Integrate.Riemann_log(np.vectorize(IMF_N),8,100,10000)
     print(IMF_m(.1), imf_fac, inverse_lifetime_PM(.003))
 
-    from galaxies import Galaxy
+    from PhoxUtil.galaxies import Galaxy
     import g3read as g3
     groupbase = "/HydroSims/Magneticum/Box4/uhr_test/groups_136/sub_136"
     snapbase = "/HydroSims/Magneticum/Box4/uhr_test/snapdir_136/snap_136"

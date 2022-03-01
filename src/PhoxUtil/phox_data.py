@@ -92,10 +92,10 @@ class read_fits:
     """
     
     def __init__(self, FITSinp: str, fmt: int = None) -> None:
-        self.phE = np.array([0,0,0])
-        self.posx = np.array([0,0,0])
-        self.posy = np.array([0,0,0])
-        self.posz = np.array([0,0,0])
+        self.phE = np.zeros(3)
+        self.posx = np.zeros(3)
+        self.posy = np.zeros(3)
+        self.posz = np.zeros(3)
 
         if fmt == FITSfmt.GENERIC_U2:
             self.read_fitsU2(self, FITSinp)
@@ -106,18 +106,21 @@ class read_fits:
         elif fmt == FITSfmt.GENERIC_U3:
             self.read_fitsU3(self, FITSinp)
         else:
-            with fits.open(FITSinp) as hdul:
-                if hdul[1].name == "PHOTON_LIST":
-                    if "PHOTON_TIME" in hdul[1].colnames:
-                        self.read_fitsU2_xissim
-                    elif hdul[1].colnames[0] == "PHOTON_ENERGY":
-                        self.read_fitsU2(self, FITSinp)                        
-                elif hdul[2].name == "PHLIST":
-                    self.read_fitsU2_simp(self, FITSinp)
-                elif hdul[1].colnames[0] == "EE":
-                    self.read_fitsU3(self, FITSinp)
-                else:
-                    raise ValueError(f"[{self.__name__}] No matching format/column names found in {FITSinp}!")
+            try:
+                with fits.open(FITSinp) as hdul:
+                    if hdul[1].name == "PHOTON_LIST":
+                        if "PHOTON_TIME" in hdul[1].colnames:
+                            self.read_fitsU2_xissim
+                        elif hdul[1].colnames[0] == "PHOTON_ENERGY":
+                            self.read_fitsU2(self, FITSinp)                        
+                    elif hdul[2].name == "PHLIST":
+                        self.read_fitsU2_simp(self, FITSinp)
+                    elif hdul[1].colnames[0] == "EE":
+                        self.read_fitsU3(self, FITSinp)
+                    else:
+                        raise ValueError(f"[{self.__name__}] No matching format/column names found in {FITSinp}!")
+            except:
+                print(f"Could not locate {FITSinp}, skipping...")
 
 
     def read_fitsU2(self, inp: str):
@@ -128,13 +131,13 @@ class read_fits:
         """
         try:
             tbl = Table.read(inp)
+            self.phE = np.asarray(tbl["PHOTON_ENERGY"])
+            self.posx = np.asarray(tbl["POS_X"])
+            self.posy = np.asarray(tbl["POS_Y"])
+            self.posz = np.asarray(tbl["POS_Z"])
         except FileNotFoundError:
             print(f"Could not locate {inp}, skipping...")
-    
-        self.phE = np.asarray(tbl["PHOTON_ENERGY"])
-        self.posx = np.asarray(tbl["POS_X"])
-        self.posy = np.asarray(tbl["POS_Y"])
-        self.posz = np.asarray(tbl["POS_Z"])
+
 
     def read_fitsU2_xissim(self, inp: str):
         """
@@ -144,13 +147,14 @@ class read_fits:
         """
         try:
             tbl = Table.read(inp)
+            self.phE = np.asarray(tbl["PHOTON_ENERGY"])
+            self.posx = np.asarray(tbl["RA"])
+            self.posy = np.asarray(tbl["DEC"])
+            # self.posz = np.asarray(tbl["POS_Z"])
         except FileNotFoundError:
             print(f"Could not locate {inp}, skipping...")
             
-        self.phE = np.asarray(tbl["PHOTON_ENERGY"])
-        self.posx = np.asarray(tbl["RA"])
-        self.posy = np.asarray(tbl["DEC"])
-        # self.posz = np.asarray(tbl["POS_Z"])
+        
 
     def read_fitsU2_simp(self, inp: str):
         """
@@ -160,13 +164,13 @@ class read_fits:
         """
         try:
             tbl = Table.read(inp)
+            self.phE = np.asarray(tbl["ENERGY"])
+            self.posx = np.asarray(tbl["RA"])
+            self.posy = np.asarray(tbl["DEC"])
+            # self.posz = np.asarray(tbl["POS_Z"])
         except FileNotFoundError:
             print(f"Could not locate {inp}, skipping...")
 
-        self.phE = np.asarray(tbl["ENERGY"])
-        self.posx = np.asarray(tbl["RA"])
-        self.posy = np.asarray(tbl["DEC"])
-        # self.posz = np.asarray(tbl["POS_Z"])
 
     def read_fitsU3(self, inp: str):
         """
@@ -176,10 +180,9 @@ class read_fits:
         """
         try:
             tbl = Table.read(inp)
+            self.phE = np.asarray(tbl["EE"])
+            self.posx = np.asarray(tbl["XX"])
+            self.posy = np.asarray(tbl["YY"])
+            self.posz = np.asarray(tbl["ZZ"])
         except FileNotFoundError:
             print(f"Could not locate {inp}, skipping...")
-
-        self.phE = np.asarray(tbl["EE"])
-        self.posx = np.asarray(tbl["XX"])
-        self.posy = np.asarray(tbl["YY"])
-        self.posz = np.asarray(tbl["ZZ"])
