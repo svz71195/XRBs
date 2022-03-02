@@ -4,6 +4,60 @@ import numpy as np
 from scipy.special import gammaincc, gamma
 from numba import njit
 
+@njit(["i1[:](i8[:],i8[:])"])
+def _get_index_list(halo_pid, ptype_pid):
+    """
+    Finds index position of ptype_pid for particles belonging to halo
+    Match particle ids that are bound to the halo, super fast!
+    -----
+    ind_all: future mask array. Entry gets set to 1 if indeces match
+                between halo and ptype
+    halo_pid: IDs of particles bound in halo. dtype = np.int64
+    ptype_pid: IDs of particles of selected ptype in box. dtype = np.int64
+    """
+    _ind_all = np.zeros_like(ptype_pid,dtype=np.byte)
+    hid = np.sort(halo_pid)
+    pid = np.sort(ptype_pid)
+    pid_ind = np.argsort(ptype_pid)
+    lend = True
+    
+    icountarr1 = 0
+    icountarr2 = 0
+    while lend:
+        if pid[icountarr2] == hid[icountarr1]:
+            _ind_all[pid_ind[icountarr2]] = 1
+            icountarr1 += 1
+            icountarr2 += 1
+            
+        else:
+            if pid[icountarr2] < hid[icountarr1]:
+                icountarr2 += 1
+            else:
+                icountarr1 += 1
+
+        if icountarr2 == len(pid) or icountarr1 == len(hid):
+            lend = False
+    
+    return _ind_all
+
+def get_index_list_bool(halo_pid, ptype_pid):
+    """
+    Forwards loop to numba.
+    Finds index position of ptype_pid for particles belonging to halo
+    Match particle ids that are bound to the halo, super fast!
+    -----
+    ind_all: future mask array. Entry gets set to 1 if indeces match
+                between halo and ptype
+    halo_pid: IDs of particles bound in halo. dtype = np.int64
+    ptype_pid: IDs of particles of selected ptype in box. dtype = np.int64
+    """
+    ind_all = _get_index_list(halo_pid, ptype_pid)
+
+    return ind_all.astype(bool)
+
+def get_index_list_bool_npy(ptype_pid, halo_pid):
+    return np.isin(ptype_pid, halo_pid,assume_unique=True)
+
 class Integrate:
 
     @staticmethod

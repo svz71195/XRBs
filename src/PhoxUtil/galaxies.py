@@ -1,11 +1,11 @@
 import numpy as np
-# from astropy.table import Table
 from astropy.cosmology import FlatLambdaCDM
 # import astropy.units as u
 import sys
 import os
 from dataclasses import dataclass, field
 from numba import njit
+import numba as nb
 
 KEV_TO_ERG = 1.60218e-9
 KPC_TO_CM = 3.0856e21
@@ -41,22 +41,27 @@ class Magneticum:
         """
         returns tuple (center, Mstar, SFR, Mvir, Rvir, R25K, SVEL, SZ, SLEN, SOFF) from group GRNR
         """
-        for halo in matcha.yield_haloes( groupbase, with_ids=True, ihalo_start=GRNR, ihalo_end=GRNR, blocks=('GPOS','MSTR','R25K','MVIR','RVIR','NSUB') ):
-            halo_center = halo["GPOS"]
+        for halo in matcha.yield_haloes( groupbase,
+                                    with_ids=True,
+                                    ihalo_start=GRNR, ihalo_end=GRNR,
+                                    blocks=('GPOS','MSTR','R25K','MVIR','RVIR','NSUB') ):
+            # halo_center = halo["GPOS"]
             halo_Mstar = halo["MSTR"][5] # stellar mass within R25K
             halo_R25K = halo["R25K"]
             halo_Mvir = halo["MVIR"]
             halo_Rvir = halo["RVIR"]
             # print(halo["NSUB"])
             
-            for subhalo in matcha.yield_subhaloes( groupbase, with_ids=True, halo_ids=halo['ids'], halo_goff=halo['GOFF'], ihalo=halo['ihalo'], blocks=('SPOS','SCM ','SVEL','SSFR','SZ  ') ):
+            for subhalo in matcha.yield_subhaloes( groupbase,
+                                    with_ids=True, halo_ids=halo['ids'],
+                                    halo_goff=halo['GOFF'], ihalo=halo['ihalo'],
+                                    blocks=('SSUB','SPOS','SCM ','SVEL','SSFR','SZ  ') ):
+                
+                subhalo_grnr = subhalo["SSUB"]
                 subhalo_center = subhalo["SPOS"]
                 subhalo_vel = subhalo["SVEL"]
                 subhalo_SFR = subhalo["SSFR"]
                 subhalo_SZ = subhalo["SZ  "]
-                # subhalo_SLEN = subhalo["SLEN"]
-                # subhalo_SOFF = subhalo["SOFF"]
-                # print(subhalo_SLEN, subhalo_SOFF, len(subhalo["ids"]))
                 break
                 
         # print(halo_center, subhalo_center)
@@ -74,49 +79,19 @@ class Magneticum:
             j = j+1
         return j
 
-
-    @staticmethod
-    def get_index_list_bool(halo_pid, ptype_pid):
-        """
-        halo_pid: IDs of particles bound in halo
-        ptype_pid: IDs of particles of selected ptype in box
-        Finds index position of ptype_pid for particles belonging to halo
-        Match particle ids that are bound to the halo, super fast!
-        """
-        ind_all = np.zeros_like(ptype_pid)
-        hid = np.sort(halo_pid)
-        pid = np.sort(ptype_pid)
-        pid_ind = np.argsort(ptype_pid)
-        lend = True
-        
-        icountarr1 = 0
-        icountarr2 = 0
-        with tqdm.tqdm(colour='red') as pbar:
-            while lend:
-                if pid[icountarr2] == hid[icountarr1]:
-                    ind_all[pid_ind[icountarr2]] = 1
-                    icountarr1 += 1
-                    icountarr2 += 1
-                    
-                else:
-                    if pid[icountarr2] < hid[icountarr1]:
-                        icountarr2 += 1
-                    else:
-                        icountarr1 += 1
-
-                if icountarr2 == len(pid) or icountarr1 == len(hid):
-                    lend = False
-                pbar.update(1)
-
-        return ind_all.astype(bool)
-
     @staticmethod
     def halo_gas(sb, ce, rad):
-        return g3.read_particles_in_box(snap_file_name=sb, center=ce, d=rad, blocks=["POS ", "VEL ", "MASS", "RHO ", "NH  ", "NE  ", "SFR ", "Zs  ", "HSML", "ID  "], ptypes=0)
+        return g3.read_particles_in_box(snap_file_name=sb,
+                        center=ce, d=rad,
+                        blocks=["POS ", "VEL ", "MASS", "RHO ", "SFR ", "Zs  ", "HSML", "ID  "],
+                        ptypes=0 )
 
     @staticmethod
     def halo_stars(sb, ce, rad):
-        return g3.read_particles_in_box(snap_file_name=sb, center=ce, d=rad, blocks=["POS ", "VEL ", "MASS", "iM  ", "AGE ", "Zs  ", "HSMS", "ID  "], ptypes=4)
+        return g3.read_particles_in_box(snap_file_name=sb, 
+                        center=ce, d=rad,
+                        blocks=["POS ", "VEL ", "MASS", "iM  ", "AGE ", "Zs  ", "HSMS", "ID  "],
+                        ptypes=4 )
     
     @staticmethod
     def spec_ang_mom(mass, pos, vel):
@@ -130,16 +105,16 @@ class Magneticum:
         self.zz_c = head.redshift
         self.aa_c = 1. / (1. + self.zz_c)
         
-        self.cos = FlatLambdaCDM( H0 = self.h*100, Om0 = Om0 )
+        self.lcdm = FlatLambdaCDM( H0 = self.h*100, Om0 = Om0 )
 
     def agez(self, z):
-        return self.cos.age(z).to("Myr").value
+        return self.lcdm.age(z).to("Myr").value
 
     def age(self, a):
         """
         Age of universe given its scalefactor in Myr
         """
-        return self.cos.age(1./a-1.).to("Myr").value
+        return self.lcdm.age(1./a-1.).to("Myr").value
 
     def age_part(self, a):
         """
@@ -152,20 +127,26 @@ class Magneticum:
         luminosity distance given scale factor a in Mpc
         """
         self.load_FlatLCDM()
-        return self.cos.luminosity_distance(1./a-1.).value
+        return self.lcdm.luminosity_distance(1./a-1.).value
 
     def lum_dist_z(self, z):
         """
         luminosity distance given scale factor a in Mpc
         """
         self.load_FlatLCDM()
-        return self.cos.luminosity_distance(z).value
+        return self.lcdm.luminosity_distance(z).value
 
-    def ang_dist(self, a):
+    def ang_dist_a(self, a):
         """
         angular distance given scale factor a in Mpc
         """
-        return self.lum_dist(a) / a / a
+        return self.lcdm.angular_diameter_distance(1./a-1.).value
+    
+    def ang_dist_z(self, z):
+        """
+        angular distance given scale factor a in Mpc
+        """
+        return self.lcdm.angular_diameter_distance(z).value
 
     def pos_to_phys(self, pos):
         return pos * self.aa_c / self.h
@@ -176,40 +157,70 @@ class Magneticum:
     def mass_to_phys(self, mass):
         return mass * self.munit / self.h
     
-    @staticmethod
-    # @njit
-    def find_COM(Bpos, Bvel, Bmass, outer):
+    def dens_to_phys(self, rho):
+        return rho 
+    
+@njit#(["UniTuple(f4[:],2)(f4[:],f4[:],f4[:],f4)"])
+def find_COM(Bpos, Bvel, Bmass, outer):
+    """
+    Forwars loop to numba implementation.
+    Shrinking sphere algorithm.
+    -----
+    Bpos, Bvel, Bmass: input positions, velocities and mass of particles
+    outer: starting radius of shrinking sphere
+    """
 
-        pCOM = np.zeros(3)
-        vCOM = np.zeros(3)
-        tCOM = np.zeros(3)
+    pCOM = np.zeros(3,dtype=np.float32)
+    vCOM = np.zeros(3,dtype=np.float32)
+    tCOM = np.zeros(3,dtype=np.float32)
 
-        rr = np.sqrt( Bpos[:,0]**2 + Bpos[:,1]**2 + Bpos[:,2]**2 )
+    rr = np.sqrt( Bpos[:,0]**2 + Bpos[:,1]**2 + Bpos[:,2]**2 )
+    mask = (rr <= outer)
+    n = len(np.where(mask==True)[0])
+    nlimit = min( 1000, int( np.ceil( 0.01*n ) ) )
+    while n >= nlimit:
+        pCOM[0] = np.sum( Bmass[mask]*Bpos[:,0][mask] ) / np.sum(Bmass[mask])
+        pCOM[1] = np.sum( Bmass[mask]*Bpos[:,1][mask] ) / np.sum(Bmass[mask])
+        pCOM[2] = np.sum( Bmass[mask]*Bpos[:,2][mask] ) / np.sum(Bmass[mask])
+        Bpos = Bpos - pCOM
+        tCOM = tCOM + pCOM
+        rr = np.sqrt(Bpos[:,0]**2+Bpos[:,1]**2+Bpos[:,2]**2)
+        outer = outer*(1-.025)
+
         mask = (rr <= outer)
         n = len(np.where(mask==True)[0])
-        nlimit = min( 1000, int( np.ceil( 0.01*n ) ) )
-        while n >= nlimit:
-            pCOM[0] = np.sum( Bmass[mask]*Bpos[:,0][mask] ) / np.sum(Bmass[mask])
-            pCOM[1] = np.sum( Bmass[mask]*Bpos[:,1][mask] ) / np.sum(Bmass[mask])
-            pCOM[2] = np.sum( Bmass[mask]*Bpos[:,2][mask] ) / np.sum(Bmass[mask])
-            Bpos = Bpos - pCOM
-            tCOM = tCOM + pCOM
-            rr = g3.to_spherical(Bpos, [0,0,0]).T[0]
-            outer = outer*(1-.025)
 
-            mask = (rr <= outer)
-            n = len(np.where(mask==True)[0])
+    v_med = np.array([np.median(Bvel[mask][:,0]), np.median(Bvel[mask][:,1]), np.median(Bvel[mask][:,2])])
+    vv = np.sqrt((Bvel[:,0]-v_med[0])**2+(Bvel[:,1]-v_med[1])**2+(Bvel[:,2]-v_med[2])**2)
+    v_max = np.percentile(vv, .9)
+    mask2 = mask&(vv <= v_max)
 
-        vv = g3.to_spherical(Bvel[mask], np.median(Bvel[mask], axis=0)).T[0]
-        v_max = np.percentile(vv, .9)
-        mask2 = (vv <= v_max)
+    vCOM[0] = np.sum( Bmass[mask2]*Bvel[:,0][mask2] ) / np.sum(Bmass[mask2])
+    vCOM[1] = np.sum( Bmass[mask2]*Bvel[:,1][mask2] ) / np.sum(Bmass[mask2])
+    vCOM[2] = np.sum( Bmass[mask2]*Bvel[:,2][mask2] ) / np.sum(Bmass[mask2])
 
-        vCOM[0] = np.sum( Bmass[mask][mask2]*Bvel[:,0][mask][mask2] ) / np.sum(Bmass[mask][mask2])
-        vCOM[1] = np.sum( Bmass[mask][mask2]*Bvel[:,1][mask][mask2] ) / np.sum(Bmass[mask][mask2])
-        vCOM[2] = np.sum( Bmass[mask][mask2]*Bvel[:,2][mask][mask2] ) / np.sum(Bmass[mask][mask2])
+    return (tCOM, vCOM)
 
-        
-        return (tCOM, vCOM)
+@njit(["b1[:](i8[:],i8[:])"])
+def get_index_list_bool(ptype_pid, halo_pid):
+    """
+    Finds index position of ptype_pid for particles belonging to halo
+    Match particle ids that are bound to the halo, super fast!
+    -----
+    out:        Boolean mask array with length of ptype_pid.
+                Entry is set to True if indeces match
+                between halo and ptype.
+    halo_pid:   IDs of particles bound to halo. dtype = np.int64
+    ptype_pid:  IDs of particles of selected ptype in box. dtype = np.int64
+    """
+    out=np.empty(ptype_pid.shape[0], dtype=nb.boolean)
+    halo_pid = set(halo_pid)
+    for i in nb.prange(ptype_pid.shape[0]):
+        if ptype_pid[i] in halo_pid:
+            out[i]=True
+        else:
+            out[i]=False
+    return out
 
 
 
@@ -231,7 +242,6 @@ class Galaxy(Magneticum):
     Rvir: float             = 1.
     R25K: float             = 1.
     Svel: float             = 1.
-    sZ: float               = 1.
     redshift: float         = 0.01
     
     ##--- Derived from snapshot ---##
@@ -244,12 +254,25 @@ class Galaxy(Magneticum):
     Zgal_g: float           = 0.
     
     ##--- Derived from which Magneticum Box ---##
-    groupbase: str          = "./Box4/uhr_test/groups_136/sub_136"
-    snapbase: str           = "./Box4/uhr_test/snapdir_136/snap_136"
+    groupbase: str          = "/HydroSims/Magneticum/Box4/uhr_test/groups_136/sub_136"
+    snapbase: str           = "/HydroSims/Magneticum/Box4/uhr_test/snapdir_136/snap_136"
 
-    @property
-    def sFSUB(self):
-        return f"{self.FSUB:06d}"
+    def __post_init__(self):
+        self.sFSUB: str     = f"{self.FSUB:06d}"
+
+        # try:
+        #     head                = g3.GadgetFile(self.snapbase+".0").header
+        # except FileNotFoundError:
+        #     print("Could not find GadgetFile at {self.snapbase}")
+        # if head:
+        #     self.h              = head.HubbleParam
+        #     self.Om0            = head.Omega0
+        #     self.zz_c           = head.redshift
+        #     self.aa_c           = 1. / (1. + self.zz_c)
+        #     self.lcdm           = FlatLambdaCDM( H0 = self.h*100, Om0 = self.Om0 )
+        #     self.boxsize        = head.BoxSize
+        #     self.numfiles       = head.num_files
+        
 
     @property
     def load(self):
@@ -263,9 +286,6 @@ class Galaxy(Magneticum):
         if not isinstance(self.snapbase, str):
             raise TypeError("'snapbase' was not set properly. Make sure that 'snapbase' is a valid path to snapshot files ...")
 
-        if not isinstance(self.Xph_base, str):
-            raise Warning("'Xph_base' was not set properly. Make sure that 'Xph_base' is a valid path to X-ray fits files produced with PHOX.\n If this is deliberate, ignore this warning...")
-
         # does path exist?
         if not os.path.isfile(self.groupbase+".0"):
             raise FileNotFoundError(self.groupbase+" does not contain the expected files...")
@@ -273,36 +293,15 @@ class Galaxy(Magneticum):
         if not os.path.isfile(self.snapbase+".0"):
             raise FileNotFoundError(self.snapbase+" does not contain the expected files...")
 
-        if False:
-            with tqdm.tqdm(total=7, file=sys.stdout) as pbar:
-                
-                self.load_FlatLCDM()
-                pbar.update(1)
-
-                self.set_GRNR()
-                pbar.update(1)
-
-                self.center, self.Mstar, self.SFR, self.Mvir, self.Rvir, self.R25K, self.Svel, self.sZ, self.SLEN, self.SOFF = self.get_halo_data(self.groupbase, self.GRNR)
-                pbar.update(1)
-
-                self.set_index_list()
-                pbar.update(1)
-
-                self.set_Rshm()
-                pbar.update(1)
-
-                self.set_bVal()
-                pbar.update(1)
-
-        else:
-            self.load_FlatLCDM()
-            self.set_GRNR()
-            self.center, self.Mstar, self.SFR, self.Mvir, self.Rvir, self.R25K, self.Svel, self.sZ = self.get_halo_data(self.groupbase, self.GRNR)
-            self.set_index_list()
-            self.set_Rshm()
-            self.set_bVal()
-            self.set_st_met()
-            self.set_gas_met()
+        self.load_FlatLCDM()
+        self.set_GRNR()
+        self.center, self.Mstar,
+        self.SFR, self.Mvir, self.Rvir,
+        self.R25K, self.Svel, self.sZ = self.get_halo_data(self.groupbase, self.GRNR)
+        self.set_Rshm()
+        self.set_bVal()
+        self.set_st_met()
+        self.set_gas_met()
 
 
     def set_groupbase(self, fp: str):
@@ -319,19 +318,15 @@ class Galaxy(Magneticum):
 
     def set_GRNR(self) -> None:
         self.GRNR = super().get_halo_GRNR( self.groupbase, self.FSUB)
-
-    @property
-    def Dlum(self):
-        return super().lum_dist_z(self.redshift)
         
-    def set_index_list(self):
-        for halo in matcha.yield_haloes( groupbase, with_ids=True, ihalo_start=self.GRNR, ihalo_end=self.GRNR, blocks=('GPOS','FSUB','NSUB') ):
+    def mask_index_list(self, check_ids):
+        for halo in matcha.yield_haloes( self.groupbase, with_ids=True, ihalo_start=self.GRNR, ihalo_end=self.GRNR, blocks=('GPOS','FSUB','NSUB') ):
             i=0
-            for subhalo in matcha.yield_subhaloes( groupbase, with_ids=True, halo_ids=halo['ids'], halo_goff=halo['GOFF'], ihalo=halo['ihalo'], blocks=('SOFF','SLEN') ):
+            for subhalo in matcha.yield_subhaloes( self.groupbase, with_ids=True, halo_ids=halo['ids'], halo_goff=halo['GOFF'], ihalo=halo['ihalo'], blocks=('SOFF','SLEN') ):
                 if self.FSUB == halo['FSUB']+i:
                     break
                 i+=1
-        self.indlist = super().get_index_list_bool(subhalo['ids'], self.get_stars()["ID  "])
+        return get_index_list_bool(subhalo['ids'], check_ids)
 
     def set_center(self) -> None:
         self.set_GRNR
@@ -362,9 +357,10 @@ class Galaxy(Magneticum):
         """
         
         stars = self.get_stars()
-        mass = stars["MASS"][self.indlist]
-        pos = self.pos_to_phys(stars["POS "][self.indlist] - self.center)
-        vel = self.vel_to_phys(stars["VEL "][self.indlist]) - self.Svel
+        indlist = self.mask_index_list(stars["ID  "])
+        mass = stars["MASS"][indlist]
+        pos = self.pos_to_phys(stars["POS "][indlist] - self.center)
+        vel = self.vel_to_phys(stars["VEL "][indlist]) - self.Svel
                 
         st_rad =  g3.to_spherical(pos, [0,0,0]).T[0]
         less = st_rad <= .1*self.pos_to_phys(self.Rvir)
@@ -377,7 +373,7 @@ class Galaxy(Magneticum):
             while np.sum(mass[st_rad <= r+dr]) <= .5*st_mass:
                 r += dr   
 
-        k, _ = self.find_COM(pos,vel,mass,5*r)
+        k, _ = find_COM(pos,vel,mass,5*r)
         
         st_rad =  g3.to_spherical(pos, k).T[0]
         less = st_rad <= .1*self.pos_to_phys(self.Rvir)
@@ -402,7 +398,7 @@ class Galaxy(Magneticum):
         pos = self.pos_to_phys( stars["POS "][self.indlist] - self.center )
         vel = self.vel_to_phys( stars["VEL "][self.indlist] ) - self.Svel
     
-        nCOM, nVOM = self.find_COM(pos,vel,mass,4.*self.Rshm)
+        nCOM, nVOM = find_COM(pos,vel,mass,4.*self.Rshm)
     
         pos = pos - nCOM
         vel = vel - nVOM
@@ -577,7 +573,7 @@ class Galaxy(Magneticum):
         return (CB07, tempiAS)
 
 
-    def gal_dict_from_npy(npy_obj):
+    def gal_dict_from_npy(cls, npy_obj):
         gal_dict = np.load(npy_obj, allow_pickle=True).item()
         return gal_dict
 
