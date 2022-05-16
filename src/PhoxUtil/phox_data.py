@@ -1,7 +1,12 @@
 import numpy as np
 from astropy.table import Table
 from astropy.io import fits
-from enum import IntEnum, auto
+
+# Available formats for 
+GENERIC_U2 = 0
+SIMPUT_U2 = 1
+XISSIM_U2 = 2
+GENERIC_U3 = 3
 
 class phE_file:
     """
@@ -66,16 +71,7 @@ class phX_file:
             self.hsml        = np.fromfile(f,np.float32,count=self.active_part)
             self.rho         = np.fromfile(f,np.float32,count=self.active_part)
             self.temp        = np.fromfile(f,np.float32,count=self.active_part)
-
-class FITSfmt(IntEnum):
-    """
-    Set constants indicating the format
-    of the fits file used in other functions
-    """
-    GENERIC_U2 = auto()
-    SIMPUT_U2 = auto()
-    XISSIM_U2 = auto()
-    GENERIC_U3 = auto()
+            self.ztot        = np.fromfile(f,np.float32,count=self.active_part)
 
 
 class read_fits:
@@ -97,26 +93,30 @@ class read_fits:
         self.posy = np.zeros(3)
         self.posz = np.zeros(3)
 
-        if fmt == FITSfmt.GENERIC_U2:
-            self.read_fitsU2(self, FITSinp)
-        elif fmt == FITSfmt.SIMPUT_U2:
-            self.read_fitsU2_simp(self, FITSinp)
-        elif fmt == FITSfmt.XISSIM_U2:
-            self.read_fitsU2_xissim(self, FITSinp)
-        elif fmt == FITSfmt.GENERIC_U3:
-            self.read_fitsU3(self, FITSinp)
+        if fmt == GENERIC_U2:
+            self.read_fitsU2(FITSinp)
+        elif fmt == SIMPUT_U2:
+            self.read_fitsU2_simp(FITSinp)
+        elif fmt == XISSIM_U2:
+            self.read_fitsU2_xissim(FITSinp)
+        elif fmt == GENERIC_U3:
+            self.read_fitsU3(FITSinp)
         else:
             try:
                 with fits.open(FITSinp) as hdul:
                     if hdul[1].name == "PHOTON_LIST":
                         if "PHOTON_TIME" in hdul[1].colnames:
+                            print("[phox_data]: Inferred format - XISSIM_U2")
                             self.read_fitsU2_xissim
                         elif hdul[1].colnames[0] == "PHOTON_ENERGY":
-                            self.read_fitsU2(self, FITSinp)                        
+                            print("[phox_data]: Inferred format - GENERIC_U2")
+                            self.read_fitsU2(FITSinp)                        
                     elif hdul[2].name == "PHLIST":
-                        self.read_fitsU2_simp(self, FITSinp)
+                        print("[phox_data]: Inferred format - SIMPUT_U2")
+                        self.read_fitsU2_simp(FITSinp)
                     elif hdul[1].colnames[0] == "EE":
-                        self.read_fitsU3(self, FITSinp)
+                        print("[phox_data]: Inferred format - GENERIC_U§")
+                        self.read_fitsU3(FITSinp)
                     else:
                         raise ValueError(f"[{self.__name__}] No matching format/column names found in {FITSinp}!")
             except:
@@ -163,7 +163,7 @@ class read_fits:
         column names: ['ENERGY','RA','DEC']
         """
         try:
-            tbl = Table.read(inp)
+            tbl = Table.read(inp,hdu=2)
             self.phE = np.asarray(tbl["ENERGY"])
             self.posx = np.asarray(tbl["RA"])
             self.posy = np.asarray(tbl["DEC"])

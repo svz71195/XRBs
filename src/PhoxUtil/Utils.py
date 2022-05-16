@@ -59,6 +59,7 @@ def calc_flux_per_bin(bins: np.ndarray, hist: np.ndarray,
     """
     Calculate flux per energy bin given a raw photon count
     histogram from a spectrum
+    Output: photons/cm^2/s/keV
     -----
     bins: bin edges for energy range (dim=N+1)
     hist: photon counts per energy bin
@@ -67,24 +68,24 @@ def calc_flux_per_bin(bins: np.ndarray, hist: np.ndarray,
     """
     bin_w = np.diff(bins)
     bin_c = calc_bin_centers(bins)
-    flux_hist = hist / bin_w / Aeff / Tobs * bin_c**2
+    flux_hist = hist / bin_w / Aeff / Tobs #/ bin_c
     return flux_hist
 
-def get_num_XRB( phE_h: list, Tobs: float = 1., Aeff: float = 1., Dlum: float = 1., Lc: float = -1.):
+def get_num_XRB( phE_t: list, Tobs: float = 1., Aeff: float = 1., Dlum: float = 1., Lc: float = -1.):
     """
     Returns tuple containing number of XRBs and array of luminosities
     """
-
-    indx_pckg_end_h = np.where( np.diff(phE_h) < 0)[0]
+    phE = phE_t[(phE_t>=.5)&(phE_t<=8.)]
+    indx_pckg_end_h = np.where( np.diff(phE) < 0)[0]
     numHXB = len(indx_pckg_end_h)
 
     lumH = np.zeros(numHXB)
     
     for i in range(numHXB):
         if i == 0:
-            lumH[i] = calc_lum_cgs( phE_h[0:indx_pckg_end_h[0]+1], Tobs, Aeff, Dlum )
+            lumH[i] = calc_lum_cgs( phE[0:indx_pckg_end_h[0]+1], Tobs, Aeff, Dlum )
         else:
-            lumH[i] = calc_lum_cgs( phE_h[indx_pckg_end_h[i-1]+1:indx_pckg_end_h[i]+1], Tobs, Aeff, Dlum )
+            lumH[i] = calc_lum_cgs( phE[indx_pckg_end_h[i-1]+1:indx_pckg_end_h[i]+1], Tobs, Aeff, Dlum )
 
     if Lc < 0:
         return (numHXB, lumH)

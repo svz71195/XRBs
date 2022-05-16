@@ -36,76 +36,63 @@ class Magneticum:
     pc          = 3.085678e18
     YR_TO_SEC   = 3.1557e7
     
-    @staticmethod
-    def get_halo_data( groupbase: str, GRNR: int ) -> tuple:
+    # @staticmethod
+    # def get_halo_data( groupbase: str, GRNR: int ) -> tuple:
+    def get_halo_data(self) -> None:
         """
         returns tuple (center, Mstar, SFR, Mvir, Rvir, R25K, SVEL, SZ, SLEN, SOFF) from group GRNR
         """
-        for halo in matcha.yield_haloes( groupbase,
-                                    with_ids=True,
-                                    ihalo_start=GRNR, ihalo_end=GRNR,
-                                    blocks=('GPOS','MSTR','R25K','MVIR','RVIR','NSUB') ):
+        for halo in matcha.yield_haloes( self.groupbase,
+                                    # with_ids = True,
+                                    ihalo_start = self.GRNR, 
+                                    ihalo_end = self.GRNR,
+                                    blocks=('GPOS','MSTR','R25K','MVIR','RVIR'),
+                                    use_cache=True ):
             # halo_center = halo["GPOS"]
-            halo_Mstar = halo["MSTR"][5] # stellar mass within R25K
-            halo_R25K = halo["R25K"]
-            halo_Mvir = halo["MVIR"]
-            halo_Rvir = halo["RVIR"]
+            self.Mstar = halo["MSTR"][5] # stellar mass within R25K
+            self.R25K = halo["R25K"]
+            self.Mvir = halo["MVIR"]
+            self.Rvir = halo["RVIR"]
             # print(halo["NSUB"])
             
-            for subhalo in matcha.yield_subhaloes( groupbase,
-                                    with_ids=True, halo_ids=halo['ids'],
-                                    halo_goff=halo['GOFF'], ihalo=halo['ihalo'],
-                                    blocks=('SSUB','SPOS','SCM ','SVEL','SSFR','SZ  ') ):
+            for subhalo in matcha.yield_subhaloes( self.groupbase,
+                                    # with_ids=True, halo_ids=halo['ids'],
+                                    # halo_goff=halo['GOFF'],
+                                    ihalo=halo['ihalo'],
+                                    blocks=('SPOS','SVEL','SSFR'),
+                                    use_cache=True ):
                 
-                subhalo_grnr = subhalo["SSUB"]
-                subhalo_center = subhalo["SPOS"]
-                subhalo_vel = subhalo["SVEL"]
-                subhalo_SFR = subhalo["SSFR"]
-                subhalo_SZ = subhalo["SZ  "]
+                self.center = subhalo["SPOS"]
+                self.Svel = subhalo["SVEL"]
+                self.SFR = subhalo["SSFR"]
                 break
-                
-        # print(halo_center, subhalo_center)
-        return (subhalo_center, halo_Mstar, subhalo_SFR, halo_Mvir, halo_Rvir, halo_R25K, subhalo_vel, subhalo_SZ)
 
-    @staticmethod
-    def get_halo_GRNR( groupbase, FSUB ):
+    def get_halo_GRNR(self):
         halo_NSUB = np.array([])
-        for k in range(16):
-            halo_NSUB = np.append( halo_NSUB, g3.read_new(groupbase+"."+str(k), "NSUB", 0, is_snap=False) )
-            if FSUB < np.sum(halo_NSUB):
+        for k in range(self.numfiles):
+            halo_NSUB = np.append( halo_NSUB, g3.read_new(f"{self.groupbase}.{k}", "NSUB", 0, is_snap=False) )
+            if self.FSUB < np.sum(halo_NSUB):
                 break
-        j = 0
-        while ( np.sum(halo_NSUB[:j+1])-FSUB <= 0 ):
-            j = j+1
-        return j
+        for j,_ in enumerate(halo_NSUB): 
+            if (np.sum(halo_NSUB[:j+1])-self.FSUB) > 0:
+                break
+        self.GRNR = j
 
-    @staticmethod
-    def halo_gas(sb, ce, rad):
-        return g3.read_particles_in_box(snap_file_name=sb,
-                        center=ce, d=rad,
-                        blocks=["POS ", "VEL ", "MASS", "RHO ", "SFR ", "Zs  ", "HSML", "ID  "],
-                        ptypes=0 )
+    def halo_gas(self):
+        return g3.read_particles_in_box(
+            snap_file_name = self.snapbase,
+            center = self.center, d = self.R25K,
+            blocks = ["POS ", "VEL ", "MASS", "RHO ", "SFR ", "Zs  ", "HSML", "ID  "],
+            ptypes = 0 )
 
-    @staticmethod
-    def halo_stars(sb, ce, rad):
-        return g3.read_particles_in_box(snap_file_name=sb, 
-                        center=ce, d=rad,
-                        blocks=["POS ", "VEL ", "MASS", "iM  ", "AGE ", "Zs  ", "HSMS", "ID  "],
-                        ptypes=4 )
-    
-    @staticmethod
-    def spec_ang_mom(mass, pos, vel):
-        return np.sum( np.cross( (mass*pos.T).T, vel, axis=1 ), axis=0 ) / np.sum(mass) 
+    def halo_stars(self):
+        return g3.read_particles_in_box(
+            snap_file_name = self.snapbase, 
+            center = self.center, d = self.R25K,
+            blocks = ["POS ", "VEL ", "MASS", "iM  ", "AGE ", "Zs  ", "HSMS", "ID  "],
+            ptypes = 4 )
 
     ### Cosmology
-    def load_FlatLCDM(self):
-        head = g3.GadgetFile(self.snapbase+".0").header
-        self.h = head.HubbleParam
-        Om0 = head.Omega0
-        self.zz_c = head.redshift
-        self.aa_c = 1. / (1. + self.zz_c)
-        
-        self.lcdm = FlatLambdaCDM( H0 = self.h*100, Om0 = Om0 )
 
     def agez(self, z):
         return self.lcdm.age(z).to("Myr").value
@@ -126,14 +113,12 @@ class Magneticum:
         """
         luminosity distance given scale factor a in Mpc
         """
-        self.load_FlatLCDM()
         return self.lcdm.luminosity_distance(1./a-1.).value
 
     def lum_dist_z(self, z):
         """
         luminosity distance given scale factor a in Mpc
         """
-        self.load_FlatLCDM()
         return self.lcdm.luminosity_distance(z).value
 
     def ang_dist_a(self, a):
@@ -158,25 +143,33 @@ class Magneticum:
         return mass * self.munit / self.h
     
     def dens_to_phys(self, rho):
-        return rho 
-    
-@njit#(["UniTuple(f4[:],2)(f4[:],f4[:],f4[:],f4)"])
+        """
+        Converts rho to g/cm^3
+        """
+        return rho * self.munit*1e33 / (self.KPC_TO_CM)**3 * self.h**2 * (1+self.zz_c)**3
+
+
+def spec_ang_mom(mass, pos, vel):
+    return np.sum( np.cross( (mass*pos.T).T, vel, axis=1 ), axis=0 ) / np.sum(mass) 
+
+@njit#(["UniTuple(f4[:],2)(f4[:,:,:],f4[:,:,:],f4[:],f4)"])
 def find_COM(Bpos, Bvel, Bmass, outer):
     """
-    Forwars loop to numba implementation.
     Shrinking sphere algorithm.
     -----
     Bpos, Bvel, Bmass: input positions, velocities and mass of particles
     outer: starting radius of shrinking sphere
     """
 
-    pCOM = np.zeros(3,dtype=np.float32)
-    vCOM = np.zeros(3,dtype=np.float32)
-    tCOM = np.zeros(3,dtype=np.float32)
+    pCOM = np.zeros(3,dtype=nb.f4)
+    vCOM = np.zeros(3,dtype=nb.f4)
+    tCOM = np.zeros(3,dtype=nb.f4)
+    v_med = np.zeros(3,dtype=nb.f4)
+    # rr = np.empty(Bpos.shape[0],dtype=nb.f4)
 
     rr = np.sqrt( Bpos[:,0]**2 + Bpos[:,1]**2 + Bpos[:,2]**2 )
     mask = (rr <= outer)
-    n = len(np.where(mask==True)[0])
+    n = Bpos[:,0][mask].shape[0]
     nlimit = min( 1000, int( np.ceil( 0.01*n ) ) )
     while n >= nlimit:
         pCOM[0] = np.sum( Bmass[mask]*Bpos[:,0][mask] ) / np.sum(Bmass[mask])
@@ -188,16 +181,17 @@ def find_COM(Bpos, Bvel, Bmass, outer):
         outer = outer*(1-.025)
 
         mask = (rr <= outer)
-        n = len(np.where(mask==True)[0])
+        n = Bpos[:,0][mask].shape[0]
 
-    v_med = np.array([np.median(Bvel[mask][:,0]), np.median(Bvel[mask][:,1]), np.median(Bvel[mask][:,2])])
-    vv = np.sqrt((Bvel[:,0]-v_med[0])**2+(Bvel[:,1]-v_med[1])**2+(Bvel[:,2]-v_med[2])**2)
+    v_med = np.array([np.median(Bvel[mask,0]), np.median(Bvel[mask,1]), np.median(Bvel[mask,2])])
+    # v_med = np.median(Bvel[mask], axis=0)
+    vv = np.sqrt((Bvel[mask,0]-v_med[0])**2+(Bvel[mask,1]-v_med[1])**2+(Bvel[mask,2]-v_med[2])**2)
     v_max = np.percentile(vv, .9)
-    mask2 = mask&(vv <= v_max)
+    mask2 = (vv <= v_max)
 
-    vCOM[0] = np.sum( Bmass[mask2]*Bvel[:,0][mask2] ) / np.sum(Bmass[mask2])
-    vCOM[1] = np.sum( Bmass[mask2]*Bvel[:,1][mask2] ) / np.sum(Bmass[mask2])
-    vCOM[2] = np.sum( Bmass[mask2]*Bvel[:,2][mask2] ) / np.sum(Bmass[mask2])
+    vCOM[0] = np.sum( Bmass[mask][mask2]*Bvel[mask,0][mask2] ) / np.sum(Bmass[mask][mask2])
+    vCOM[1] = np.sum( Bmass[mask][mask2]*Bvel[mask,1][mask2] ) / np.sum(Bmass[mask][mask2])
+    vCOM[2] = np.sum( Bmass[mask][mask2]*Bvel[mask,2][mask2] ) / np.sum(Bmass[mask][mask2])
 
     return (tCOM, vCOM)
 
@@ -213,9 +207,9 @@ def get_index_list_bool(ptype_pid, halo_pid):
     halo_pid:   IDs of particles bound to halo. dtype = np.int64
     ptype_pid:  IDs of particles of selected ptype in box. dtype = np.int64
     """
-    out=np.empty(ptype_pid.shape[0], dtype=nb.boolean)
+    out = np.empty(ptype_pid.shape[0], dtype=nb.boolean)
     halo_pid = set(halo_pid)
-    for i in nb.prange(ptype_pid.shape[0]):
+    for i in range(ptype_pid.shape[0]):
         if ptype_pid[i] in halo_pid:
             out[i]=True
         else:
@@ -242,7 +236,7 @@ class Galaxy(Magneticum):
     Rvir: float             = 1.
     R25K: float             = 1.
     Svel: float             = 1.
-    redshift: float         = 0.01
+    # redshift: float         = 0.01 # Observed redshift
     
     ##--- Derived from snapshot ---##
     Rshm: float             = 1.
@@ -260,49 +254,20 @@ class Galaxy(Magneticum):
     def __post_init__(self):
         self.sFSUB: str     = f"{self.FSUB:06d}"
 
-        # try:
-        #     head                = g3.GadgetFile(self.snapbase+".0").header
-        # except FileNotFoundError:
-        #     print("Could not find GadgetFile at {self.snapbase}")
-        # if head:
-        #     self.h              = head.HubbleParam
-        #     self.Om0            = head.Omega0
-        #     self.zz_c           = head.redshift
-        #     self.aa_c           = 1. / (1. + self.zz_c)
-        #     self.lcdm           = FlatLambdaCDM( H0 = self.h*100, Om0 = self.Om0 )
-        #     self.boxsize        = head.BoxSize
-        #     self.numfiles       = head.num_files
-        
+        head            = g3.GadgetFile(self.snapbase+".0").header
+        self.h          = head.HubbleParam
+        self.Om0        = head.Omega0
+        self.zz_c       = head.redshift
+        self.aa_c       = 1. / (1. + self.zz_c)
+        self.lcdm       = FlatLambdaCDM( H0 = self.h*100, Om0 = self.Om0 )
+        self.boxsize    = head.BoxSize
+        self.numfiles   = head.num_files
 
-    @property
-    def load(self):
-        """
-        Uses built in functions to populate __init__ fields with data based on FSUB
-        """
-
-        if not isinstance(self.groupbase, str):
-            raise TypeError("'groupbase' was not set properly. Make sure that 'groupbase' is a valid path to halo catalogues ...")
-
-        if not isinstance(self.snapbase, str):
-            raise TypeError("'snapbase' was not set properly. Make sure that 'snapbase' is a valid path to snapshot files ...")
-
-        # does path exist?
-        if not os.path.isfile(self.groupbase+".0"):
-            raise FileNotFoundError(self.groupbase+" does not contain the expected files...")
-        
-        if not os.path.isfile(self.snapbase+".0"):
-            raise FileNotFoundError(self.snapbase+" does not contain the expected files...")
-
-        self.load_FlatLCDM()
-        self.set_GRNR()
-        self.center, self.Mstar,
-        self.SFR, self.Mvir, self.Rvir,
-        self.R25K, self.Svel, self.sZ = self.get_halo_data(self.groupbase, self.GRNR)
-        self.set_Rshm()
-        self.set_bVal()
+        self.get_halo_GRNR()
+        self.get_halo_data()
+        self.set_star_quants() # Rshm, bVal
         self.set_st_met()
-        self.set_gas_met()
-
+        self.set_gas_met()        
 
     def set_groupbase(self, fp: str):
         if isinstance(fp, str):
@@ -315,42 +280,17 @@ class Galaxy(Magneticum):
             self.snapbase = fp
         else:
             raise TypeError("Can not set snapbase to non str object")
-
-    def set_GRNR(self) -> None:
-        self.GRNR = super().get_halo_GRNR( self.groupbase, self.FSUB)
         
     def mask_index_list(self, check_ids):
-        for halo in matcha.yield_haloes( self.groupbase, with_ids=True, ihalo_start=self.GRNR, ihalo_end=self.GRNR, blocks=('GPOS','FSUB','NSUB') ):
+        for halo in matcha.yield_haloes( self.groupbase, with_ids=True, ihalo_start=self.GRNR, ihalo_end=self.GRNR, blocks=('GPOS','FSUB','NSUB'), use_cache=True ):
             i=0
-            for subhalo in matcha.yield_subhaloes( self.groupbase, with_ids=True, halo_ids=halo['ids'], halo_goff=halo['GOFF'], ihalo=halo['ihalo'], blocks=('SOFF','SLEN') ):
+            for subhalo in matcha.yield_subhaloes( self.groupbase, with_ids=True, halo_ids=halo['ids'], halo_goff=halo['GOFF'], ihalo=halo['ihalo'], blocks=('SOFF','SLEN'), use_cache=True ):
                 if self.FSUB == halo['FSUB']+i:
                     break
                 i+=1
-        return get_index_list_bool(subhalo['ids'], check_ids)
+        return get_index_list_bool(check_ids, subhalo['ids'])
 
-    def set_center(self) -> None:
-        self.set_GRNR
-        self.center = super().get_halo_data( self.groupbase, self.GRNR )[0]
-
-    def set_Mstar(self) -> None:
-        self.set_GRNR
-        self.Mstar = super().get_halo_data( self.groupbase, self.GRNR )[1] * self.munit / self.h
-        self.Mvir = super().get_halo_data( self.groupbase, self.GRNR )[3] * self.munit / self.h
-
-    def set_SFR(self):
-        self.set_GRNR
-        self.SFR = super().get_halo_data( self.groupbase, self.GRNR )[2]
-
-    def set_radii(self):
-        self.set_GRNR
-        self.Rvir = super().get_halo_data( self.groupbase, self.GRNR )[4]
-        self.R25K = super().get_halo_data( self.groupbase, self.GRNR )[5]
-
-    def set_sZ(self):
-        self.set_GRNR
-        self.sZ = super().get_halo_data( self.groupbase, self.GRNR )[6]
-
-    def set_Rshm(self):
+    def set_star_quants(self):
         """
         Following description in Teklu+15, stellar half-mass radius from stars within 10% of Rvir
         returns half-mass radius in kpc/h
@@ -367,73 +307,52 @@ class Galaxy(Magneticum):
         
         st_mass = np.sum(mass[less])
         
-        # Approximate from below
+        # Approximate Rshm from below
         r = 0.
         for dr in [1., .1, .01, .001, 1.e-4, 1.e-5]:
             while np.sum(mass[st_rad <= r+dr]) <= .5*st_mass:
                 r += dr   
 
-        k, _ = find_COM(pos,vel,mass,5*r)
+        pCOM, vCOM = find_COM(pos,vel,mass,5*r)
         
-        st_rad =  g3.to_spherical(pos, k).T[0]
-        less = st_rad <= .1*self.pos_to_phys(self.Rvir)
-
+        st_rad =  g3.to_spherical(pos, pCOM).T[0]
+        less = (st_rad <= .1*self.pos_to_phys(self.Rvir))
         st_mass = np.sum(mass[less])
-        
+
         r = 0.
         for dr in [1., .1, .01, .001, 1.e-4, 1.e-5]:
             while np.sum(mass[st_rad <= r+dr]) <= .5*st_mass:
                 r += dr
 
         self.Rshm = round(r,5)
-        
 
-    def set_bVal(self):
-        """
-        Following Teklu+15, Schulze+18, cuts: b >= -4.35 -> LTG // b <= -4.73 -> ETG
-        """
-    
-        stars = self.get_stars()
-        mass = self.mass_to_phys( stars["MASS"][self.indlist] )
-        pos = self.pos_to_phys( stars["POS "][self.indlist] - self.center )
-        vel = self.vel_to_phys( stars["VEL "][self.indlist] ) - self.Svel
-    
-        nCOM, nVOM = find_COM(pos,vel,mass,4.*self.Rshm)
-    
-        pos = pos - nCOM
-        vel = vel - nVOM
-        rad = g3.to_spherical(pos, [0,0,0]).T[0]
-        mask = ( rad <= 3.*self.Rshm )
+        vel = vel - vCOM
+        mask = ( st_rad <= 3.*self.Rshm )
 
-        st_mass_ph = np.sum(mass[mask])
-        # print(f"{(st_mass_ph):.3e}") 
-
-        self.Mstar = st_mass_ph 
-
-        self.bVal = np.log10( np.linalg.norm(self.spec_ang_mom(mass[mask], pos[mask], vel[mask])) ) - 2./3. * np.log10(st_mass_ph)        
+        self.bVal = \
+            np.log10( np.linalg.norm(spec_ang_mom(mass[mask], pos[mask], vel[mask])) ) \
+            - 2./3. * np.log10(self.mass_to_phys(np.sum(mass[mask])))       
 
     def get_gas(self):
-        return super().halo_gas( self.snapbase, self.center, self.Rvir )
-    
-    @property
-    def gas(self):
-        return self.get_gas()
+        return self.halo_gas()
 
     def get_gas_pos(self):
-        gas = self.stars
+        gas = self.get_gas()
         pos = gas["POS "]
 
         return pos
 
     def get_stars(self):
-        return super().halo_stars( self.snapbase, self.center, self.Rvir )
-    
-    @property
-    def stars(self):
-        return self.get_stars()
+        return self.halo_stars()
+
+    def get_st_pos(self):
+        stars = self.get_stars()
+        pos = stars["POS "]
+
+        return pos
 
     def set_st_met(self):
-        stars = self.stars
+        stars = self.get_stars()
         age = self.age_part(stars["AGE "]) # Myrs
         age_c = (age <= 100)
         mass = stars["MASS"]
@@ -463,7 +382,7 @@ class Galaxy(Magneticum):
         """
         Returns metallicities for individual stars. Can also return masses for weights...
         """
-        stars = self.stars
+        stars = self.get_stars()
         mass = stars["MASS"]
         iM = stars["iM  "]
         Zs = stars["Zs  "]
@@ -474,15 +393,9 @@ class Galaxy(Magneticum):
             return (Zstar, mass)
         else:
             return Zstar
-    
-    def get_st_pos(self):
-        stars = self.stars
-        pos = stars["POS "]
-
-        return pos
 
     def set_gas_met(self):
-        gas = self.gas
+        gas = self.get_gas()
         sfr = gas["SFR "]
         sfr_c = (sfr > 0)
         mass = self.mass_to_phys( gas["MASS"] )
@@ -572,7 +485,7 @@ class Galaxy(Magneticum):
 
         return (CB07, tempiAS)
 
-
+    @classmethod
     def gal_dict_from_npy(cls, npy_obj):
         gal_dict = np.load(npy_obj, allow_pickle=True).item()
         return gal_dict
@@ -581,6 +494,7 @@ class Galaxy(Magneticum):
 
 if __name__ == "__main__":
 
+    Galaxy(5416)
     groupbase = "/home/lcladm/Studium/Masterarbeit/test/dorc/uhr_test/groups_136/sub_136"
     snapbase = "/home/lcladm/Studium/Masterarbeit/test/dorc/uhr_test/snapdir_136/snap_136"
 

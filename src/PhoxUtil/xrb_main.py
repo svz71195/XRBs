@@ -289,14 +289,14 @@ class XRB:
         return len(samp[m])
 
     @staticmethod
-    @njit
+    @njit#(["f4[:](f4[:],f4[:])"])
     def XLF(lumarr: np.ndarray, samp: np.ndarray) -> np.ndarray:
         """
         Produces the XLF of a given sample
         """
         xlf = np.zeros_like(lumarr)
         for i,lum in enumerate(lumarr):
-            xlf[i] = len(samp[samp > lum])
+            xlf[i] = samp[samp > lum].shape[0]
         
         return xlf
 

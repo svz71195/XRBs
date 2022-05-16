@@ -100,7 +100,7 @@ levels = [0.68,.9,.95,.99]
 
 # hm = hsms>2.8*np.mean(hsms)
 # 1/(4/3*hsms[:]**3*3.141526)
-hsms = hsms/4.
+hsms = hsms
 rho = m[:]/(4/3*(hsms[:]/1)**3*3.141526)
 ones = np.ones_like(m[:]/rho[:]/hsms[:]**3.)
 print(len(ones))
@@ -115,21 +115,21 @@ fig2 = plt.figure(figsize=(6,6))
 ax = fig2.add_subplot(111)
 # im1 = ax[0].imshow(iMq,extent=extent,origin='lower',norm=mclr.LogNorm(vmin=5.e-4,clip=True),interpolation='none')
 im2 = ax.imshow(iMq,extent=extent,origin='lower',norm=mclr.LogNorm(),interpolation='none',cmap="viridis")
-csH = ax.contour(xi, yi, ziH, levels = levels,
-            linestyles=['solid','dashed','dashdot','dotted'], # iterable so that each level has different style
-            colors=['k'], # iterable so that each level has same color
-            origin=origin,
-            extent=extent)
-csL = ax.contour(xi, yi, ziL, levels = levels,
-            linestyles=['solid','dashed','dashdot','dotted'], # iterable so that each level has different style
-            colors=['r'], # iterable so that each level has same color
-            origin=origin,
-            extent=extent)
+# csH = ax.contour(xi, yi, ziH, levels = levels,
+#             linestyles=['solid','dashed','dashdot','dotted'], # iterable so that each level has different style
+#             colors=['k'], # iterable so that each level has same color
+#             origin=origin,
+#             extent=extent)
+# csL = ax.contour(xi, yi, ziL, levels = levels,
+#             linestyles=['solid','dashed','dashdot','dotted'], # iterable so that each level has different style
+#             colors=['r'], # iterable so that each level has same color
+#             origin=origin,
+#             extent=extent)
 
-ax.clabel(csH, fmt=(lambda x: f'{x*100:.0f}%'), fontsize=8)
-ax.clabel(csL, fmt=(lambda x: f'{x*100:.0f}%'), fontsize=8)
-csH.collections[0].set_label("HXB")
-csL.collections[0].set_label("LXB")
+# ax.clabel(csH, fmt=(lambda x: f'{x*100:.0f}%'), fontsize=8)
+# ax.clabel(csL, fmt=(lambda x: f'{x*100:.0f}%'), fontsize=8)
+# csH.collections[0].set_label("HXB")
+# csL.collections[0].set_label("LXB")
 # cb = plt.colorbar(im2, shrink=.7)
 # cb.set_label(label=r"scalefactor",fontsize=14)
 # cb.ax.get_yaxis().set_major_formatter(lambda x, _: f'{x:g}')
